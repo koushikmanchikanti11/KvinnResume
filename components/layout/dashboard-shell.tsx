@@ -29,6 +29,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         color: "#f3f3f3",
         display: "flex",
         flexDirection: "column",
+        overflowX: "hidden", // Prevent horizontal scroll
       }}
     >
       {/* Desktop navbar — hidden on mobile */}
@@ -40,28 +41,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer overlay */}
       <MobileDrawer />
 
-      <div
-        style={{
-          display: "flex",
-          flex: 1,
-          alignItems: "flex-start",
-        }}
-      >
-        {/* Desktop sidebar — already has hidden md:flex */}
+      <div className="dashboard-body flex flex-1 items-start">
+        {/* Desktop sidebar */}
         <DashboardSidebar />
 
         <main
-          className="dashboard-main pb-20 md:pb-0"
-          style={{
-            flex: 1,
-            minHeight: "calc(100vh - 64px)",
-            padding: "24px",
-            minWidth: 0,
-          }}
+          className="dashboard-main flex-1 w-full min-h-[calc(100vh-64px)] p-4 pb-20 md:p-6 md:pb-6"
         >
-          <div style={{ maxWidth: "1200px", width: "100%", margin: "0 auto" }}>
-            {children}
-          </div>
+          {children}
         </main>
       </div>
 

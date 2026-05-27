@@ -1,66 +1,80 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Plus, Edit3, MoreVertical, Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Plus, Search, FileText } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/ui/pixel/page-header";
+import { PixelCard } from "@/components/ui/pixel/pixel-card";
+import { EmptyState } from "@/components/ui/pixel/empty-state";
 
-export default function ResumesPage() {
+export default async function ResumesPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const supabase = await createClient();
+
+  const { data: resumes } = await supabase
+    .from("resumes")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false });
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display font-bold">My Resumes</h1>
-          <p className="text-muted-foreground mt-1">Manage, edit, and optimize your tailored resumes.</p>
-        </div>
-        <Button className="pixel-shadow-sm shadow-primary/20">
-          <Plus className="size-4 mr-2" />
-          Create Resume
-        </Button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
-        <div className="relative w-full sm:w-96">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search resumes..." className="pl-8 bg-card/50" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur group hover:border-primary/50 transition-all cursor-pointer flex flex-col h-72">
-          <CardContent className="flex flex-col items-center justify-center flex-1 text-center p-6 text-muted-foreground group-hover:text-foreground">
-            <div className="bg-primary/10 p-4 rounded-full mb-4 group-hover:scale-110 transition-transform">
-              <Plus className="size-8 text-primary" />
+    <div className="flex flex-col gap-8 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <PageHeader 
+        title="My Resumes"
+        description="Manage your tailored resumes and their publish settings."
+        action={
+          <>
+            <div className="relative">
+              <Search className="w-4 h-4 text-kv-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <input 
+                type="text" 
+                placeholder="Search resumes..." 
+                className="h-9 w-64 bg-kv-surface-2 border border-kv-border-soft rounded-lg pl-9 pr-3 text-[13px] text-kv-text-primary focus:outline-none focus:border-kv-border-mid transition-colors"
+              />
             </div>
-            <h3 className="font-display font-bold text-lg">Create New</h3>
-            <p className="text-sm mt-2">Start from scratch or use an existing file</p>
-          </CardContent>
-        </Card>
+            <Button className="h-9 bg-kv-cta-bg text-kv-cta-text hover:bg-white font-jetbrains text-[12px] uppercase tracking-wider border-none shadow-[rgba(0,0,0,0.4)_0px_1.5px_0.5px_2.5px,rgb(0,0,0)_0px_0px_0.5px_1px,rgba(0,0,0,0.25)_0px_2px_1px_1px_inset,rgba(255,255,255,0.2)_0px_1px_1px_1px_inset]">
+              <Plus className="w-3.5 h-3.5 mr-2" />
+              New Resume
+            </Button>
+          </>
+        }
+      />
 
-        {/* Placeholder for an active resume */}
-        <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur group flex flex-col h-72 overflow-hidden">
-          <div className="bg-muted h-32 flex items-center justify-center border-b border-border">
-             <span className="text-muted-foreground font-mono text-xs">Preview</span>
-          </div>
-          <CardContent className="p-4 flex-1 flex flex-col justify-between">
-            <div>
-              <div className="flex items-start justify-between">
+      {!resumes || resumes.length === 0 ? (
+        <EmptyState 
+          icon={<Plus className="w-8 h-8" />}
+          title="No resumes yet"
+          description="Upload an existing resume or create a blank one to get started with KvinnResume."
+          action={
+            <Button className="h-9 bg-kv-cta-bg text-kv-cta-text hover:bg-white font-jetbrains text-[12px] uppercase tracking-wider border-none shadow-[rgba(0,0,0,0.4)_0px_1.5px_0.5px_2.5px,rgb(0,0,0)_0px_0px_0.5px_1px,rgba(0,0,0,0.25)_0px_2px_1px_1px_inset,rgba(255,255,255,0.2)_0px_1px_1px_1px_inset]">
+              <Plus className="w-3.5 h-3.5 mr-2" />
+              Create Blank Resume
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {resumes.map((resume) => (
+            <PixelCard key={resume.id} className="flex flex-col p-6 group">
+              <div className="flex items-start justify-between mb-8">
                 <div>
-                  <h3 className="font-bold font-display line-clamp-1">Senior Frontend Engineer</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Updated 2 days ago</p>
+                  <h3 className="text-[16px] font-semibold tracking-[-0.01em] text-kv-text-primary mb-1 line-clamp-1">
+                    {resume.title}
+                  </h3>
+                  <p className="text-[13px] text-kv-text-secondary line-clamp-1">Last edited {new Date(resume.updated_at).toLocaleDateString()}</p>
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 -mt-1">
-                  <MoreVertical className="size-4" />
+              </div>
+              <div className="flex items-center gap-2 mt-auto">
+                <Button size="sm" className="flex-1 bg-kv-surface-2 text-kv-text-primary border border-kv-border-soft hover:bg-kv-surface-4 h-9 text-[13px] font-medium transition-colors">
+                  Open Editor
                 </Button>
               </div>
-            </div>
-            <div className="flex items-center gap-2 mt-4">
-              <Button className="w-full h-8 text-xs font-medium" variant="outline">
-                <Edit3 className="size-3 mr-1" />
-                Edit
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </PixelCard>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

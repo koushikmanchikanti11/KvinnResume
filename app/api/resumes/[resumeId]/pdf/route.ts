@@ -1,10 +1,4 @@
-import { NextResponse } from "next/server";
-
-// TODO: GET export resume as PDF via Puppeteer
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ resumeId: string }> }
-) {
-  const { resumeId } = await params;
-  return NextResponse.json({ resumeId, message: "PDF export pending" });
+// Scaffolded for Phase 9
+export async function GET(req: Request, { params }: { params: { resumeId: string } }) {
+  return new Response('Not Implemented', { status: 501 })
 }

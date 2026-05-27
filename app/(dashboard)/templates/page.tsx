@@ -1,53 +1,51 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Sparkles, Eye } from "lucide-react";
+import { getCurrentUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/ui/pixel/page-header";
 
-export default function TemplatesPage() {
-  const templates = [
-    { id: 'pixel', name: 'Pixel Perfect', category: 'Creative', isPremium: false },
-    { id: 'modern', name: 'Modern ATS', category: 'Professional', isPremium: false },
-    { id: 'executive', name: 'Executive Suite', category: 'Professional', isPremium: true },
-    { id: 'startup', name: 'Startup Hustle', category: 'Creative', isPremium: true },
-  ];
+export default async function TemplatesPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
 
+  // Fetch from the API route we will build
+  // For static layout preview, we'll mock it
+  
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display font-bold">Resume Templates</h1>
-          <p className="text-muted-foreground mt-1">Choose a design that fits your industry and personality.</p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-8 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <PageHeader 
+        title="Templates"
+        description="Choose a pixel-perfect design for your resume. Premium templates require Pro."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {templates.map((template) => (
-          <Card key={template.id} className="pixel-shadow-sm border-border bg-card/50 backdrop-blur group overflow-hidden flex flex-col">
-            <div className="bg-muted h-64 relative flex items-center justify-center border-b border-border group-hover:bg-muted/80 transition-colors">
-              {template.isPremium && (
-                <div className="absolute top-2 right-2 bg-amber-500/10 text-amber-500 px-2 py-1 rounded text-xs font-bold font-mono flex items-center gap-1">
-                  <Sparkles className="size-3" />
-                  PREMIUM
-                </div>
-              )}
-              <span className="text-muted-foreground font-mono text-xs">{template.name} Preview</span>
-              <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Button variant="secondary" size="sm">
-                  <Eye className="size-4 mr-2" />
-                  Preview
-                </Button>
-              </div>
-            </div>
-            <CardContent className="p-4 flex flex-col justify-between flex-1">
-              <div>
-                <h3 className="font-bold font-display text-lg">{template.name}</h3>
-                <p className="text-sm text-muted-foreground">{template.category}</p>
-              </div>
-              <Button className="w-full mt-4" variant={template.isPremium ? "default" : "outline"}>
-                Use Template
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {/* Placeholder template 1 */}
+        <div className="flex flex-col gap-3 group">
+          <div className="aspect-[1/1.414] border border-kv-border-soft rounded-lg bg-[#f7f7f2] relative overflow-hidden transition-all group-hover:border-kv-accent-amber shadow-sm">
+             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                <button className="h-9 px-6 rounded bg-kv-cta-bg text-kv-cta-text font-jetbrains uppercase text-[12px] shadow-[rgba(0,0,0,0.4)_0px_1.5px_0.5px_2.5px,rgb(0,0,0)_0px_0px_0.5px_1px,rgba(0,0,0,0.25)_0px_2px_1px_1px_inset,rgba(255,255,255,0.2)_0px_1px_1px_1px_inset] border-none transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">Use Template</button>
+             </div>
+          </div>
+          <div>
+            <h3 className="text-[14px] font-medium text-kv-text-primary">Pixel OS Standard</h3>
+            <p className="text-[12px] text-kv-text-muted">Included in Free</p>
+          </div>
+        </div>
+
+        {/* Placeholder template 2 */}
+        <div className="flex flex-col gap-3 group">
+          <div className="aspect-[1/1.414] border border-kv-border-soft rounded-lg bg-[#f7f7f2] relative overflow-hidden transition-all group-hover:border-kv-accent-amber shadow-sm">
+             <div className="absolute top-2 right-2 bg-kv-accent-violet text-white text-[10px] font-jetbrains uppercase px-2 py-0.5 rounded shadow-sm z-10">Pro</div>
+             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                <button className="h-9 px-6 rounded bg-kv-cta-bg text-kv-cta-text font-jetbrains uppercase text-[12px] shadow-[rgba(0,0,0,0.4)_0px_1.5px_0.5px_2.5px,rgb(0,0,0)_0px_0px_0.5px_1px,rgba(0,0,0,0.25)_0px_2px_1px_1px_inset,rgba(255,255,255,0.2)_0px_1px_1px_1px_inset] border-none transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">Use Template</button>
+             </div>
+          </div>
+          <div>
+            <h3 className="text-[14px] font-medium text-kv-text-primary flex items-center gap-1.5">
+              Executive Deep
+              <span className="text-kv-accent-amber">✦</span>
+            </h3>
+            <p className="text-[12px] text-kv-text-muted">Requires Pro Plan</p>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCredits } from "@/hooks/use-credits";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -167,59 +168,82 @@ export function DashboardSidebar() {
       <div className="flex-1" />
 
       {/* Sidebar Footer: Credits Used Meter */}
+      <SidebarCreditsMeter />
+    </aside>
+  );
+}
+
+function SidebarCreditsMeter() {
+  const { credits, loading } = useCredits();
+
+  // If loading or not available, use defaults for skeleton
+  const maxCredits = credits?.plan === 'premium' ? 2000 : 1000;
+  const used = credits?.monthly_ai_credits_used ?? 0;
+  const balance = credits?.credits_balance ?? 0;
+  
+  const total = used + balance;
+  const percentage = total > 0 ? (used / total) * 100 : 0;
+  const isHigh = percentage > 90;
+
+  return (
+    <div
+      style={{
+        padding: "12px",
+        borderRadius: "8px",
+        background: "#111214",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }}
+    >
       <div
         style={{
-          padding: "12px",
-          borderRadius: "8px",
-          background: "#111214",
-          border: "1px solid rgba(255,255,255,0.06)",
+          fontSize: "10px",
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          color: "#454647",
+          fontFamily: "var(--font-jetbrains), monospace",
+          textTransform: "uppercase",
+          marginBottom: "8px",
+        }}
+      >
+        CREDITS USED
+      </div>
+      {/* Progress bar */}
+      <div
+        style={{
+          width: "100%",
+          height: "6px",
+          background: "rgba(255,255,255,0.06)",
+          borderRadius: "3px",
+          marginBottom: "6px",
+          overflow: "hidden",
         }}
       >
         <div
           style={{
-            fontSize: "10px",
-            fontWeight: 500,
-            letterSpacing: "0.08em",
-            color: "#6a6b6c",
-            fontFamily: "var(--font-jetbrains), monospace",
-            textTransform: "uppercase",
-            marginBottom: "8px",
-          }}
-        >
-          CREDITS USED
-        </div>
-        {/* Progress bar */}
-        <div
-          style={{
-            width: "100%",
-            height: "6px",
-            background: "rgba(255,255,255,0.06)",
+            width: loading ? "0%" : `${Math.min(percentage, 100)}%`,
+            height: "100%",
+            background: isHigh ? "#ff6363" : "#e7c59a",
             borderRadius: "3px",
-            marginBottom: "6px",
-            overflow: "hidden",
+            transition: "width 300ms ease",
           }}
-        >
-          <div
-            style={{
-              width: "0%",
-              height: "100%",
-              background: "#e7c59a",
-              borderRadius: "3px",
-              transition: "width 300ms ease",
-            }}
-          />
-        </div>
-        <div
-          style={{
-            fontSize: "11px",
-            fontFamily: "var(--font-jetbrains), monospace",
-            color: "#9c9c9d",
-          }}
-        >
-          0 / 0
-        </div>
+        />
       </div>
-    </aside>
+      <div
+        style={{
+          fontSize: "11px",
+          fontFamily: "var(--font-jetbrains), monospace",
+          color: "#9c9c9d",
+        }}
+      >
+        {loading ? (
+          <span className="animate-pulse">Loading...</span>
+        ) : credits ? (
+          `${used.toLocaleString()} / ${total.toLocaleString()}`
+        ) : (
+          "---"
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -231,7 +255,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
         fontSize: "10px",
         fontWeight: 500,
         letterSpacing: "0.08em",
-        color: "#6a6b6c",
+        color: "#454647",
         fontFamily: "var(--font-jetbrains), monospace",
         textTransform: "uppercase",
         padding: "4px 12px",

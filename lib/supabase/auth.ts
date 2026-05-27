@@ -1,23 +1,23 @@
-import { createServerSupabaseClient } from "./server";
+import { createClient } from './client'
 
-export async function getCurrentUser() {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    if (error || !user) return null;
-    return user;
-  } catch (err) {
-    console.error("Error getting current user:", err);
-    return null;
-  }
+export type OAuthProvider = 'google' | 'github' | 'discord'
+
+export const signInWithOAuth = async (provider: OAuthProvider) => {
+  const supabase = createClient()
+  
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: `${window.location.origin}/api/auth/callback`,
+    },
+  })
+
+  if (error) throw error
+  return data
 }
 
-export async function requireUser() {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-  return user;
+export const signOut = async () => {
+  const supabase = createClient()
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
 }
-

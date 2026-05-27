@@ -1,61 +1,58 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, Eye, Download, Users } from "lucide-react";
+import { getCurrentUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { BarChart3, Eye, Download } from "lucide-react";
+import { PageHeader } from "@/components/ui/pixel/page-header";
+import { PixelCard } from "@/components/ui/pixel/pixel-card";
+import { EmptyState } from "@/components/ui/pixel/empty-state";
 
-export default function AnalyticsPage() {
+export default async function AnalyticsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display font-bold">Analytics</h1>
-          <p className="text-muted-foreground mt-1">Track views and performance of your shared resumes.</p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-8 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <PageHeader 
+        title="Analytics"
+        icon={<BarChart3 className="w-6 h-6 text-kv-text-muted" />}
+        description="Track views and downloads for your public resumes and profile card."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Views</CardTitle>
-            <Eye className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-display">0</div>
-            <p className="text-xs text-muted-foreground">+0% from last month</p>
-          </CardContent>
-        </Card>
-        <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Downloads</CardTitle>
-            <Download className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-display">0</div>
-            <p className="text-xs text-muted-foreground">+0% from last month</p>
-          </CardContent>
-        </Card>
-        <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unique Visitors</CardTitle>
-            <Users className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-display">0</div>
-            <p className="text-xs text-muted-foreground">+0% from last month</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur">
-        <CardHeader>
-          <CardTitle>Views Over Time</CardTitle>
-          <CardDescription>Your resume views for the last 30 days.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground border border-dashed border-border rounded-lg">
-            <BarChart3 className="size-8 mb-2 opacity-50" />
-            <p>No data available yet</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <PixelCard className="col-span-1 p-6">
+          <div className="flex items-center gap-2 text-[10px] font-jetbrains tracking-wider uppercase text-kv-text-muted mb-4">
+            <Eye className="w-4 h-4" />
+            Total Profile Views
           </div>
-        </CardContent>
-      </Card>
+          <div className="text-[48px] font-bold leading-none tracking-[-0.06em] text-kv-text-primary font-mono">
+            0
+          </div>
+          <div className="text-[12px] text-kv-text-secondary mt-3">
+            Last 30 days
+          </div>
+        </PixelCard>
+
+        <PixelCard className="col-span-1 p-6">
+          <div className="flex items-center gap-2 text-[10px] font-jetbrains tracking-wider uppercase text-kv-text-muted mb-4">
+            <Download className="w-4 h-4" />
+            Resume Downloads
+          </div>
+          <div className="text-[48px] font-bold leading-none tracking-[-0.06em] text-kv-text-primary font-mono">
+            0
+          </div>
+          <div className="text-[12px] text-kv-text-secondary mt-3">
+            Last 30 days
+          </div>
+        </PixelCard>
+      </div>
+
+      <PixelCard className="p-0 border border-kv-border-soft overflow-hidden">
+        <EmptyState 
+          icon={<BarChart3 className="w-8 h-8" />}
+          title="Not enough data"
+          description="Publish a resume or complete your profile card to start tracking visitor engagement."
+          className="border-none rounded-none min-h-[300px]"
+        />
+      </PixelCard>
     </div>
   );
 }

@@ -1,9 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { AvatarMenu } from "./avatar-menu";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCredits } from "@/hooks/use-credits";
 
 export function DashboardNavbar() {
+  const { credits, loading } = useCredits();
+
   return (
     <nav
       className="sticky top-0 z-50 hidden md:flex items-center justify-between"
@@ -23,13 +28,13 @@ export function DashboardNavbar() {
             style={{
               width: "28px",
               height: "28px",
-              background: "#000",
-              border: "1px solid rgba(255,255,255,0.2)",
+              background: "#e6e6e6",
+              border: "1px solid rgba(255,255,255,0.15)",
               borderRadius: "6px",
               position: "relative",
             }}
           >
-            <span style={{ color: "#f3f3f3", fontWeight: 700, fontSize: "16px", lineHeight: 1 }}>K</span>
+            <span style={{ color: "#2f3031", fontWeight: 700, fontSize: "16px", lineHeight: 1 }}>K</span>
             <span
               style={{
                 position: "absolute",
@@ -72,16 +77,23 @@ export function DashboardNavbar() {
           style={{
             background: "#111214",
             border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "6px",
-            padding: "6px 12px",
+            borderRadius: "8px",
+            padding: "0 12px",
+            height: "34px",
             fontSize: "12px",
             fontFamily: "var(--font-jetbrains), monospace",
             fontWeight: 500,
             color: "#f3f3f3",
           }}
         >
-          <span style={{ color: "#e7c59a", fontSize: "10px" }}>◆</span>
-          <span>0 CREDITS</span>
+          {loading ? (
+            <span className="animate-pulse" style={{ color: "#6a6b6c" }}>LOADING...</span>
+          ) : (
+            <>
+              <span style={{ color: credits && credits.credits_balance <= 0 ? "#ff6363" : "#e7c59a", fontSize: "10px" }}>◆</span>
+              <span>{credits ? credits.credits_balance.toLocaleString() : "..."} CREDITS</span>
+            </>
+          )}
         </div>
 
         {/* Notification Button */}

@@ -1,10 +1,4 @@
-import { NextResponse } from "next/server";
-
-// TODO: POST publish resume — generate public slug, update visibility
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ resumeId: string }> }
-) {
-  const { resumeId } = await params;
-  return NextResponse.json({ resumeId, message: "Published" });
+// Scaffolded for Phase 7
+export async function POST(req: Request, { params }: { params: { resumeId: string } }) {
+  return new Response('Not Implemented', { status: 501 })
 }

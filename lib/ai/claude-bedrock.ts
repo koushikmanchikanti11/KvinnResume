@@ -1,2 +1,1 @@
-// TODO: AWS Bedrock Claude client
-export async function claudeChat(prompt: string) { return null; }
+// DELETED - Replaced by v3 (Minimax/Qwen)

@@ -1,47 +1,63 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { getCurrentUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/ui/pixel/page-header";
+import { PixelCard } from "@/components/ui/pixel/pixel-card";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display font-bold">Settings</h1>
-          <p className="text-muted-foreground mt-1">Manage your account settings and preferences.</p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-8 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <PageHeader 
+        title="Settings"
+        description="Configure your dashboard preferences and defaults."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1">
-          <nav className="flex flex-col space-y-1">
-            <Button variant="secondary" className="justify-start">Profile</Button>
-            <Button variant="ghost" className="justify-start">Account</Button>
-            <Button variant="ghost" className="justify-start">Appearance</Button>
-            <Button variant="ghost" className="justify-start">Notifications</Button>
-          </nav>
-        </div>
-        <div className="md:col-span-2 space-y-6">
-          <Card className="pixel-shadow-sm border-border bg-card/50 backdrop-blur">
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Update your personal information.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input id="name" defaultValue="John Doe" />
+      <div className="flex flex-col gap-6 max-w-3xl">
+        <PixelCard className="p-6">
+          <h3 className="text-[16px] font-semibold tracking-[-0.01em] text-kv-text-primary mb-6 border-b border-kv-border-soft pb-4">
+            Preferences
+          </h3>
+          
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[14px] font-medium text-kv-text-primary">Theme</div>
+                <div className="text-[13px] text-kv-text-secondary">Select your dashboard color scheme.</div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input id="email" type="email" defaultValue="john@example.com" disabled />
-                <p className="text-xs text-muted-foreground">Contact support to change your email.</p>
+              <select className="bg-kv-surface-2 border border-kv-border-soft text-kv-text-primary text-[13px] rounded-lg px-3 py-1.5 focus:outline-none focus:border-kv-accent-violet">
+                <option value="system">System</option>
+                <option value="dark">Obsidian Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[14px] font-medium text-kv-text-primary">Default Resume Visibility</div>
+                <div className="text-[13px] text-kv-text-secondary">Visibility applied to new resumes automatically.</div>
               </div>
-              <Button className="pixel-shadow-sm shadow-primary/20">Save Changes</Button>
-            </CardContent>
-          </Card>
-        </div>
+              <select className="bg-kv-surface-2 border border-kv-border-soft text-kv-text-primary text-[13px] rounded-lg px-3 py-1.5 focus:outline-none focus:border-kv-accent-violet">
+                <option value="private">Private</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="public">Public</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[14px] font-medium text-kv-text-primary">AI Writing Tone</div>
+                <div className="text-[13px] text-kv-text-secondary">How AI should rewrite your bullet points.</div>
+              </div>
+              <select className="bg-kv-surface-2 border border-kv-border-soft text-kv-text-primary text-[13px] rounded-lg px-3 py-1.5 focus:outline-none focus:border-kv-accent-violet">
+                <option value="professional">Professional</option>
+                <option value="startup">Startup / Direct</option>
+                <option value="academic">Academic</option>
+              </select>
+            </div>
+          </div>
+        </PixelCard>
       </div>
     </div>
   );
