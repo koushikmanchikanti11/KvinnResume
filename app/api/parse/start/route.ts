@@ -78,81 +78,122 @@ export async function POST(req: Request) {
 
     if (cachedRaw) {
       // Cache hit — create a NEW completed job for this user using cached result
-      const cached = typeof cachedRaw === "string"
-        ? JSON.parse(cachedRaw) as NormalizedParseResult
-        : cachedRaw as unknown as NormalizedParseResult;
+      let cached: NormalizedParseResult | null = null;
 
-      // Still deduct credits and increment parse count (cache is speed, not free)
-      await deductCredits(user.id, feature, "parse_jobs", undefined, { fileId, mode });
-      await incrementParseCount(user.id);
+      try {
+        // Branch 1: String cache (JSON serialized)
+        if (typeof cachedRaw === "string") {
+          const parsed = JSON.parse(cachedRaw) as any;
 
-      const jobId = crypto.randomUUID();
-      const provider = (cached.metadata?.provider as string) || (mode === "nano_pro" ? "reducto" : "llamaparse");
+          // Strict validation: check for required fields with proper type and non-empty content
+          const isValidCachedResult =
+            parsed &&
+            typeof parsed === "object" &&
+            typeof parsed.raw_markdown === "string" &&
+            parsed.raw_markdown.length > 0;
 
-      const { error: cachedInsertError } = await supabase.from("parse_jobs").insert({
-        id: jobId,
-        user_id: user.id,
-        resume_file_id: file.id,
-        provider,
-        parser_mode: mode,
-        status: "running",
-        credits_used: cost,
-        raw_markdown: cached.raw_markdown,
-        raw_text: cached.raw_text,
-        parsed_items: cached.parsed_items,
-        pages_count: cached.pages_count,
-        completed_at: null,
-        metadata: { ...cached.metadata, from_cache: true },
-      });
-
-      if (cachedInsertError) {
-        await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
-        return NextResponse.json(
-          { error: "Failed to create cached parse job" },
-          { status: 500 }
-        );
+          if (isValidCachedResult) {
+            cached = parsed as NormalizedParseResult;
+          } else {
+            console.warn(`[Cache Hit] Invalid cached result shape for ${cacheKey}`);
+            await redis.del(cacheKey);
+          }
+        }
+        // Branch 2: Object cache (Redis client returns parsed)
+        else if (
+          typeof cachedRaw === "object" &&
+          cachedRaw !== null &&
+          typeof (cachedRaw as any).raw_markdown === "string" &&
+          (cachedRaw as any).raw_markdown.length > 0
+        ) {
+          cached = cachedRaw as NormalizedParseResult;
+        }
+        // Branch 3: Invalid format
+        else {
+          console.warn(`[Cache Hit] Invalid non-string cache format for ${cacheKey}`);
+          await redis.del(cacheKey);
+        }
+      } catch (parseError) {
+        console.warn(`[Cache Hit] Invalid cache JSON for ${cacheKey}:`, parseError);
+        await redis.del(cacheKey);
+        cached = null;
       }
 
-      await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
-      await redis.set(`job:parse:${jobId}:owner`, user.id, { ex: 3600 });
+      // If we have valid cache, use it
+      if (cached) {
+        // Still deduct credits and increment parse count (cache is speed, not free)
+        await deductCredits(user.id, feature, "parse_jobs", undefined, { fileId, mode });
+        await incrementParseCount(user.id);
 
-      // Update file status
-      await supabase.from("resume_files").update({
-        parse_status: "running",
-        parser_mode: mode
-      }).eq("id", file.id)
-        .eq("user_id", user.id);
+        const jobId = crypto.randomUUID();
+        const provider = (cached.metadata?.provider as string) || (mode === "nano_pro" ? "reducto" : "llamaparse");
 
-      // Trigger AI structuring for this user's job (fire and forget)
-      structureResumeFromJob(jobId)
-        .then(async () => {
-          await supabase.from("parse_jobs").update({
-            status: "completed",
-            completed_at: new Date().toISOString(),
-          }).eq("id", jobId).eq("user_id", user.id);
-
-          await supabase.from("resume_files").update({
-            parse_status: "completed",
-          }).eq("id", file.id).eq("user_id", user.id);
-
-          await redis.set(`job:parse:${jobId}:status`, "completed", { ex: 3600 });
-        })
-        .catch(async (error) => {
-          await supabase.from("parse_jobs").update({
-            status: "failed",
-            error_message: error?.message || "AI structuring failed",
-            failed_at: new Date().toISOString(),
-          }).eq("id", jobId).eq("user_id", user.id);
-
-          await supabase.from("resume_files").update({
-            parse_status: "failed",
-          }).eq("id", file.id).eq("user_id", user.id);
-
-          await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
-          await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
+        const { error: cachedInsertError } = await supabase.from("parse_jobs").insert({
+          id: jobId,
+          user_id: user.id,
+          resume_file_id: file.id,
+          provider,
+          parser_mode: mode,
+          status: "running",
+          credits_used: cost,
+          raw_markdown: cached.raw_markdown,
+          raw_text: cached.raw_text,
+          parsed_items: cached.parsed_items,
+          pages_count: cached.pages_count,
+          completed_at: null,
+          metadata: { ...cached.metadata, from_cache: true },
         });
 
-      return NextResponse.json({ jobId, status: "running" }, { status: 201 });
+        if (cachedInsertError) {
+          await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
+          return NextResponse.json(
+            { error: "Failed to create cached parse job" },
+            { status: 500 }
+          );
+        }
+
+        await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
+        await redis.set(`job:parse:${jobId}:owner`, user.id, { ex: 3600 });
+
+        // Update file status
+        await supabase.from("resume_files").update({
+          parse_status: "running",
+          parser_mode: mode
+        }).eq("id", file.id)
+          .eq("user_id", user.id);
+
+        // Trigger AI structuring for this user's job (fire and forget)
+        structureResumeFromJob(jobId)
+          .then(async () => {
+            await supabase.from("parse_jobs").update({
+              status: "completed",
+              completed_at: new Date().toISOString(),
+            }).eq("id", jobId).eq("user_id", user.id);
+
+            await supabase.from("resume_files").update({
+              parse_status: "completed",
+            }).eq("id", file.id).eq("user_id", user.id);
+
+            await redis.set(`job:parse:${jobId}:status`, "completed", { ex: 3600 });
+          })
+          .catch(async (error) => {
+            await supabase.from("parse_jobs").update({
+              status: "failed",
+              error_message: error?.message || "AI structuring failed",
+              failed_at: new Date().toISOString(),
+            }).eq("id", jobId).eq("user_id", user.id);
+
+            await supabase.from("resume_files").update({
+              parse_status: "failed",
+            }).eq("id", file.id).eq("user_id", user.id);
+
+            await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
+            await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
+          });
+
+        return NextResponse.json({ jobId, status: "running" }, { status: 201 });
+      }
+      // If cached is null, fall through to fresh parse below
     }
 
     // 6. Acquire Redis lock (user-scoped to prevent same user double-submit)
