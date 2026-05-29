@@ -8,7 +8,7 @@ export async function GET(
 ) {
   try {
     const { jobId } = await params;
-    
+
     if (!jobId) {
       return NextResponse.json({ error: "jobId is required" }, { status: 400 });
     }
@@ -22,7 +22,7 @@ export async function GET(
 
     let { data: job, error: jobError } = await supabase
       .from("parse_jobs")
-      .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json")
+      .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items")
       .eq("id", jobId)
       .eq("user_id", user.id)
       .single();
@@ -32,22 +32,27 @@ export async function GET(
     }
 
     // Trigger finalization if completed but not yet structured
-    if (job.status === "completed" && !job.parsed_json) {
+    if (
+      (job.status === "running" || job.status === "completed") &&
+      !job.parsed_json
+    ) {
       await finalizeParseJob(jobId);
-      
+
+
       // Re-fetch job data after finalization
       const { data: refreshedJob } = await supabase
         .from("parse_jobs")
-        .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json")
+        .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items")
         .eq("id", jobId)
+        .eq("user_id", user.id)
         .single();
-        
+
       if (refreshedJob) job = refreshedJob;
     }
 
     let resumeId = null;
     if (job.metadata && typeof job.metadata === "object" && "resume_id" in job.metadata) {
-       resumeId = (job.metadata as any).resume_id;
+      resumeId = (job.metadata as any).resume_id;
     }
 
     return NextResponse.json({
@@ -58,6 +63,12 @@ export async function GET(
       pages_count: job.pages_count,
       provider: job.provider,
       created_at: job.created_at,
+
+      // optional debug/useful fields
+      has_raw_markdown: Boolean(job.raw_markdown),
+      has_raw_text: Boolean(job.raw_text),
+      has_parsed_items: Boolean(job.parsed_items),
+      has_parsed_json: Boolean(job.parsed_json),
     }, { status: 200 });
 
   } catch (err: any) {

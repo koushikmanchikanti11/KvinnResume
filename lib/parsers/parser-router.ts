@@ -12,7 +12,7 @@ import { normalizeLlamaParseResult, normalizeReductoResult } from "./normalize-r
 export async function startParseJob(mode: ParseMode, jobId: string) {
   try {
     const supabase = await createClient();
-    
+
     // Get job and file details
     const { data: job, error: jobError } = await supabase
       .from("parse_jobs")
@@ -47,16 +47,17 @@ export async function startParseJob(mode: ParseMode, jobId: string) {
     }
 
     // Save provider and external job ID to DB and Redis
-    await supabase.from("parse_jobs").update({ 
+    await supabase.from("parse_jobs").update({
       external_job_id: externalJobId,
       provider,
       status: "running"
     }).eq("id", jobId);
-    
+
     await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
   } catch (err: any) {
     console.error(`Error starting parse job ${jobId}:`, err);
     await failJob(jobId, err.message);
+    throw err; // Re-throw to signal failure to caller
   }
 }
 
@@ -64,12 +65,12 @@ export async function startParseJob(mode: ParseMode, jobId: string) {
 export async function checkParseJob(jobId: string): Promise<ParseStatus> {
   const supabase = await createClient();
   const { data: job } = await supabase.from("parse_jobs").select("*, resume_files(storage_path)").eq("id", jobId).single();
-  
+
   if (!job) return "failed";
   if (job.status === "cancelled" || job.status === "completed" || job.status === "failed") {
     return job.status as ParseStatus;
   }
-  
+
   if (!job.external_job_id) return "pending";
 
   try {
@@ -89,15 +90,15 @@ export async function checkParseJob(jobId: string): Promise<ParseStatus> {
       const parsedData = normalizeLlamaParseResult(providerStatusResponse.data);
       if (shouldFallbackToReducto(parsedData)) {
         console.log(`Auto mode fallback triggered for job ${jobId}`);
-        
+
         // Start Reducto job
         // @ts-ignore
         const storagePath = job.resume_files?.storage_path;
         const fileUrl = await getSignedUrl(supabase, "resume-originals", storagePath, 3600);
-        
+
         const { job_id: fallbackId } = await startReductoJob(fileUrl, { jobId });
-        
-        await supabase.from("parse_jobs").update({ 
+
+        await supabase.from("parse_jobs").update({
           external_job_id: fallbackId,
           provider: "reducto",
           status: "running"
@@ -138,7 +139,7 @@ export async function finalizeParseJob(jobId: string) {
 
   const supabase = await createClient();
   const { data: job } = await supabase.from("parse_jobs").select("*").eq("id", jobId).single();
-  
+
   if (!job || !job.external_job_id) throw new Error("Job not ready to finalize");
   if (job.parsed_json) return; // Already finalized
 
@@ -158,16 +159,33 @@ export async function finalizeParseJob(jobId: string) {
     currentMetadata.pages_count = result.pages_count;
 
     await supabase.from("parse_jobs").update({
-      status: "running", // stays running during AI structuring
+      status: "running",
       raw_markdown: result.raw_markdown,
-      metadata: currentMetadata,
-      completed_at: new Date().toISOString()
+      raw_text: result.raw_text,
+      parsed_items: result.parsed_items,
+      pages_count: result.pages_count,
+      metadata: {
+        ...currentMetadata,
+        ...result.metadata,
+        pages_count: result.pages_count,
+      },
+      completed_at: new Date().toISOString(),
     }).eq("id", jobId);
 
     await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
 
     // Trigger AI Structuring — this sets status to "completed" when done
-    await structureResumeFromJob(jobId);
+    //await structureResumeFromJob(jobId);
+    // TEMP: AI structuring is not implemented yet.
+    // For now, complete only the raw parser stage.
+    // Later, re-enable structureResumeFromJob(jobId) after lib/ai/resume-ai.ts is ready.
+
+    await supabase.from("parse_jobs").update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
+
+    await redis.set(`job:parse:${jobId}:status`, "completed", { ex: 3600 });
 
     // After structuring succeeds: write result to cache for future users with same file
     const { data: fileRow } = await supabase
@@ -206,7 +224,7 @@ async function failJob(jobId: string, errorMsg: string) {
   }).eq("id", jobId);
 
   await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
-  
+
   const { data: job } = await supabase.from("parse_jobs").select("resume_file_id").eq("id", jobId).single();
   if (job?.resume_file_id) {
     await supabase.from("resume_files").update({ parse_status: "failed" }).eq("id", job.resume_file_id);
@@ -218,7 +236,7 @@ function shouldFallbackToReducto(data: NormalizedParseResult): boolean {
   if (md.length < 500) return true;
 
   const lowerMd = md.toLowerCase();
-  
+
   // Missing important sections
   const sections = ["experience", "education", "skills", "projects", "summary", "profile"];
   let missingCount = 0;
