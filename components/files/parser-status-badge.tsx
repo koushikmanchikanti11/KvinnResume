@@ -1,84 +1,102 @@
 import { cn } from "@/lib/utils";
 
 export type ParserStatus =
-  | "not_started"
-  | "unparsed"
+  | "idle"
   | "pending"
   | "running"
-  | "parsing_complete"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 type ParserStatusBadgeProps = {
   status?: ParserStatus | string | null;
-  label?: string;
   className?: string;
 };
 
-const statusConfig: Record<
-  string,
+function normalizeStatus(status?: string | null): ParserStatus {
+  const value = String(status || "idle").toLowerCase();
+
+  if (value === "queued" || value === "uploading") return "pending";
+  if (value === "parsing" || value === "structuring" || value === "enhancing") {
+    return "running";
+  }
+  if (value === "parsed" || value === "ready" || value === "success") {
+    return "completed";
+  }
+  if (value === "error") return "failed";
+
+  if (
+    value === "idle" ||
+    value === "pending" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  ) {
+    return value;
+  }
+
+  return "idle";
+}
+
+const config: Record<
+  ParserStatus,
   {
     label: string;
     className: string;
-    dotClassName: string;
+    dot: string;
   }
 > = {
-  not_started: {
-    label: "Unparsed",
-    className: "border-white/10 bg-white/[0.03] text-kv-text-secondary",
-    dotClassName: "bg-kv-text-muted",
-  },
-  unparsed: {
-    label: "Unparsed",
-    className: "border-white/10 bg-white/[0.03] text-kv-text-secondary",
-    dotClassName: "bg-kv-text-muted",
+  idle: {
+    label: "Idle",
+    className: "border-white/10 bg-white/[0.03] text-kv-text-muted",
+    dot: "bg-kv-text-muted",
   },
   pending: {
     label: "Pending",
-    className: "border-kv-accent-amber/30 bg-kv-accent-amber/10 text-kv-accent-amber",
-    dotClassName: "bg-kv-accent-amber",
+    className: "border-kv-accent-amber/35 bg-kv-accent-amber/10 text-kv-accent-amber",
+    dot: "bg-kv-accent-amber animate-pulse",
   },
   running: {
-    label: "Parsing",
-    className: "border-kv-accent-blue/30 bg-kv-accent-blue/10 text-kv-accent-blue",
-    dotClassName: "bg-kv-accent-blue animate-pulse",
-  },
-  parsing_complete: {
-    label: "Structuring AI",
-    className: "border-kv-accent-violet/30 bg-kv-accent-violet/10 text-[#c8b6ff]",
-    dotClassName: "bg-kv-accent-violet animate-pulse",
+    label: "Running",
+    className: "border-kv-accent-blue/35 bg-kv-accent-blue/10 text-kv-accent-blue",
+    dot: "bg-kv-accent-blue animate-pulse",
   },
   completed: {
     label: "Completed",
-    className: "border-kv-accent-green/30 bg-kv-accent-green/10 text-kv-accent-green",
-    dotClassName: "bg-kv-accent-green",
+    className: "border-kv-accent-green/35 bg-kv-accent-green/10 text-kv-accent-green",
+    dot: "bg-kv-accent-green",
   },
   failed: {
     label: "Failed",
-    className: "border-kv-accent-red/30 bg-kv-accent-red/10 text-[#ff8c8c]",
-    dotClassName: "bg-kv-accent-red",
+    className: "border-kv-accent-red/35 bg-kv-accent-red/10 text-[#ff8c8c]",
+    dot: "bg-kv-accent-red",
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "border-white/10 bg-white/[0.03] text-kv-text-muted",
+    dot: "bg-kv-text-disabled",
   },
 };
 
 export function ParserStatusBadge({
   status,
-  label,
   className,
 }: ParserStatusBadgeProps) {
-  const normalized = String(status || "not_started").toLowerCase();
-  const config = statusConfig[normalized] ?? statusConfig.failed;
+  const normalized = normalizeStatus(status);
+  const item = config[normalized];
 
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
         "font-jetbrains text-[10px] font-medium uppercase tracking-[0.12em]",
-        config.className,
+        item.className,
         className
       )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", config.dotClassName)} />
-      {label || config.label}
+      <span className={cn("h-1.5 w-1.5 rounded-full", item.dot)} />
+      {item.label}
     </span>
   );
 }

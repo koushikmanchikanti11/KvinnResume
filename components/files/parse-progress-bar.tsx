@@ -1,82 +1,86 @@
+"use client";
+
+import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
+import type { ParserStatus } from "./parser-status-badge";
+import { ParserStatusBadge } from "./parser-status-badge";
 
 type ParseProgressBarProps = {
-  status?: "idle" | "pending" | "running" | "parsing_complete" | "completed" | "failed" | "cancelled" | string | null;
-  progress?: number | null;
-  className?: string;
+  status: ParserStatus;
+  progress: number;
   label?: string;
-  onCancel?: () => void;
+  error?: string | null;
+  onTryAgain?: () => void;
+  className?: string;
 };
 
-function getProgressFromStatus(status?: string | null) {
-  switch (String(status || "").toLowerCase()) {
-    case "uploaded":
-    case "idle":
-      return 10;
-    case "queued":
-    case "pending":
-      return 25;
-    case "parsing":
-    case "running":
-      return 55;
-    case "structuring":
-    case "parsing_complete":
-      return 76;
-    case "enhancing":
-      return 88;
-    case "parsed":
-    case "completed":
-      return 100;
-    case "failed":
-    case "cancelled":
-      return 100;
-    default:
-      return 0;
-  }
+const progressColor: Record<ParserStatus, string> = {
+  idle: "bg-kv-text-muted",
+  pending: "bg-kv-accent-amber",
+  running: "bg-kv-accent-blue",
+  completed: "bg-kv-accent-green",
+  failed: "bg-kv-accent-red",
+  cancelled: "bg-kv-text-disabled",
+};
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 }
 
 export function ParseProgressBar({
   status,
   progress,
-  className,
   label,
-  onCancel,
+  error,
+  onTryAgain,
+  className,
 }: ParseProgressBarProps) {
-  const normalizedStatus = String(status || "").toLowerCase();
-  
-  if (normalizedStatus === "idle") return null;
-
-  const value =
-    typeof progress === "number"
-      ? Math.max(0, Math.min(100, progress))
-      : getProgressFromStatus(status);
-
-  const failed = normalizedStatus === "failed";
-  const completed =
-    normalizedStatus === "completed" || normalizedStatus === "parsed";
-  const isActive = !failed && !completed && normalizedStatus !== "idle";
+  const value = clampProgress(progress);
 
   return (
-    <div className={cn("w-full", className)}>
-      <div className="mb-1.5 flex items-center justify-between font-jetbrains text-[10px] uppercase tracking-[0.12em]">
-        <div className="flex items-center gap-3">
-          <span className="text-kv-text-disabled">{label || "Parse Progress"}</span>
-          {isActive && onCancel && (
-            <button
-              onClick={onCancel}
-              className="flex items-center gap-1 text-kv-text-muted hover:text-kv-accent-red transition-colors"
-            >
-              <X className="w-3 h-3" />
-              Cancel
-            </button>
-          )}
+    <div
+      className={cn(
+        "rounded-xl border border-white/[0.08] bg-kv-surface-2 p-4",
+        className
+      )}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
+            Parse Progress
+          </p>
+
+          <p className="mt-1 text-[14px] font-medium text-kv-text-primary">
+            {label ||
+              (status === "completed"
+                ? "Completed. Redirecting to editor..."
+                : status === "failed"
+                  ? "Parsing failed"
+                  : status === "running"
+                    ? "Parsing your resume..."
+                    : status === "pending"
+                      ? "Preparing parser..."
+                      : "Waiting to start")}
+          </p>
         </div>
+
+        <ParserStatusBadge status={status} />
+      </div>
+
+      <div className="mt-4 h-3 overflow-hidden rounded-md border border-white/[0.04] bg-white/[0.06]">
+        <div
+          className={cn("h-full transition-all duration-500", progressColor[status])}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+
+      <div className="mt-2 flex items-center justify-between font-jetbrains text-[10px] uppercase tracking-[0.12em]">
+        <span className="text-kv-text-disabled">Live indicator</span>
         <span
           className={cn(
-            failed
+            status === "failed"
               ? "text-kv-accent-red"
-              : completed
+              : status === "completed"
                 ? "text-kv-accent-green"
                 : "text-kv-accent-blue"
           )}
@@ -85,31 +89,22 @@ export function ParseProgressBar({
         </span>
       </div>
 
-      <div className="h-2 overflow-hidden rounded-[3px] border border-white/[0.04] bg-white/[0.05]">
-        <div
-          className={cn(
-            "h-full transition-all duration-500",
-            failed
-              ? "bg-kv-accent-red"
-              : completed
-                ? "bg-kv-accent-green"
-                : "bg-kv-accent-blue"
-          )}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-
-      {completed && (
-        <p className="mt-2 font-jetbrains text-[10px] text-kv-accent-green uppercase tracking-[0.12em]">
-          Redirecting to editor...
+      {error ? (
+        <p className="mt-3 rounded-lg border border-kv-accent-red/25 bg-kv-accent-red/10 p-3 text-[13px] leading-5 text-[#ff8c8c]">
+          {error}
         </p>
-      )}
+      ) : null}
 
-      {failed && (
-        <p className="mt-2 font-jetbrains text-[10px] text-kv-accent-red uppercase tracking-[0.12em]">
-          Try again...
-        </p>
-      )}
+      {status === "failed" && onTryAgain ? (
+        <button
+          type="button"
+          onClick={onTryAgain}
+          className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-white/10 bg-kv-surface-3 px-3 font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] text-kv-text-primary transition hover:bg-kv-surface-4 max-sm:w-full"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Try Again
+        </button>
+      ) : null}
     </div>
   );
 }

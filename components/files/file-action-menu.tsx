@@ -1,270 +1,371 @@
 "use client";
 
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
+import { Download, MoreHorizontal, RefreshCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  MoreHorizontal,
-  ExternalLink,
-  RotateCcw,
-  Download,
-  Trash2,
-  Loader2,
-  FileJson,
-  FileEdit,
-  Sparkles,
-} from "lucide-react";
-import { toast } from "sonner";
-
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ParserMode,
+  ParserModeSelector,
+} from "./parser-mode-selector";
+import { ParseProgressBar } from "./parse-progress-bar";
+import type { ParserStatus } from "./parser-status-badge";
 
-interface SourceFile {
-  id: string;
-  fileId?: string;
-  original_filename?: string;
-  filename?: string;
-  file_size?: number;
-  parse_status?: string;
-  parser_mode?: string;
-  pages_count?: number;
-  created_at?: string;
-  resume_id?: string | null;
-  storage_path?: string;
-  [key: string]: any;
-}
-
-interface FileActionMenuProps {
-  file: SourceFile;
-  onDelete: (id: string) => void;
-  onReparse: (file: SourceFile) => void;
-  onPreviewJson: (json: any) => void;
-}
+type FileActionMenuProps = {
+  fileId: string;
+  fileName?: string | null;
+  plan?: string | null;
+  canDownload?: boolean;
+};
 
 export function FileActionMenu({
-  file,
-  onDelete,
-  onReparse,
-  onPreviewJson,
+  fileId,
+  fileName,
+  plan,
+  canDownload = true,
 }: FileActionMenuProps) {
   const router = useRouter();
-  const supabase = createClient();
-  const [open, setOpen] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-  const fileId = file.id;
-  const isParsed = file.parse_status === "completed";
-  const isProcessing = file.parse_status === "pending" || file.parse_status === "running";
+  const [reparseOpen, setReparseOpen] = useState(false);
+  const [mode, setMode] = useState<ParserMode>("nano");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [status, setStatus] = useState<ParserStatus>("idle");
+  const [progress, setProgress] = useState(0);
+  const [label, setLabel] = useState("Waiting to start");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleOpenOriginal = async () => {
-    if (!file.storage_path) {
-      toast.error("Original file storage path not found");
-      return;
+  const isBusy = status === "pending" || status === "running";
+
+  function resetReparse() {
+    setMode("nano");
+    setJobId(null);
+    setStatus("idle");
+    setProgress(0);
+    setLabel("Waiting to start");
+    setError(null);
+  }
+
+  async function handleDelete() {
+    const ok = window.confirm("Delete this file?");
+    if (!ok) return;
+
+    const response = await fetch(`/api/files/${fileId}`, {
+      method: "DELETE",
+    });
+
+    if (response.ok) {
+      router.refresh();
     }
+  }
 
-    setLoadingAction("open");
+  async function startReparse() {
+    setStatus("pending");
+    setProgress(15);
+    setLabel("Starting re-parse job...");
+    setError(null);
+
     try {
-      const { data, error } = await supabase.storage
-        .from("resume-originals")
-        .createSignedUrl(file.storage_path, 3600);
+      const response = await fetch("/api/parse/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileId,
+          mode,
+        }),
+      });
 
-      if (error) throw error;
-      if (data?.signedUrl) {
-        window.open(data.signedUrl, "_blank");
-      } else {
-        throw new Error("Failed to get signed URL");
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to start re-parse.");
       }
+
+      const nextJobId = data?.jobId || data?.id || data?.job?.id;
+
+      if (!nextJobId) {
+        throw new Error("Parse started but job id was not returned.");
+      }
+
+      setJobId(nextJobId);
+      setStatus("running");
+      setProgress(35);
+      setLabel("Re-parsing resume...");
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to generate file preview link");
-    } finally {
-      setLoadingAction(null);
-      setOpen(false);
+      setStatus("failed");
+      setProgress(100);
+      setLabel("Re-parse failed.");
+      setError(err instanceof Error ? err.message : "Re-parse failed.");
     }
-  };
+  }
 
-  const handleFetchParsedJson = async (action: "preview" | "download") => {
-    setLoadingAction(action);
-    try {
-      const { data, error } = await supabase
-        .from("parse_jobs")
-        .select("parsed_json")
-        .eq("resume_file_id", fileId)
-        .eq("status", "completed")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  useEffect(() => {
+    if (!jobId || status !== "running") return;
 
-      if (error) throw error;
-      if (!data?.parsed_json) {
-        toast.error("No completed parsed JSON found for this file.");
-        return;
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const response = await fetch(`/api/parse/status?jobId=${jobId}`);
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to read parse status.");
+        }
+
+        if (cancelled) return;
+
+        const nextStatus = String(data?.status || "").toLowerCase();
+
+        if (nextStatus === "completed") {
+          setStatus("completed");
+          setProgress(100);
+          setLabel("Completed. Redirecting to editor...");
+
+          let resumeId = data?.resumeId || data?.resume_id || data?.result?.resumeId;
+
+          if (!resumeId) {
+            const resultResponse = await fetch(`/api/parse/result/${jobId}`);
+            const resultData = await resultResponse.json().catch(() => null);
+            resumeId =
+              resultData?.resumeId ||
+              resultData?.resume_id ||
+              resultData?.resume?.id;
+          }
+
+          if (resumeId) {
+            setTimeout(() => {
+              router.push(`/editor/${resumeId}`);
+            }, 900);
+          } else {
+            router.refresh();
+          }
+
+          return;
+        }
+
+        if (nextStatus === "failed") {
+          setStatus("failed");
+          setProgress(100);
+          setLabel("Re-parse failed.");
+          setError(data?.error || data?.message || "Parser failed.");
+          return;
+        }
+
+        if (nextStatus === "cancelled") {
+          setStatus("cancelled");
+          setProgress(100);
+          setLabel("Re-parse cancelled.");
+          return;
+        }
+
+        setProgress(
+          Math.max(35, Math.min(95, Number(data?.progress || progress + 8)))
+        );
+        setLabel(data?.label || "Re-parsing resume...");
+      } catch (err) {
+        if (!cancelled) {
+          setStatus("failed");
+          setProgress(100);
+          setLabel("Status polling failed.");
+          setError(err instanceof Error ? err.message : "Status polling failed.");
+        }
       }
-
-      if (action === "preview") {
-        onPreviewJson(data.parsed_json);
-      } else {
-        const formattedJson = JSON.stringify(data.parsed_json, null, 2);
-        const blob = new Blob([formattedJson], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        const cleanFilename = (file.original_filename || file.filename || "file").replace(/\.[^/.]+$/, "");
-        link.download = `${cleanFilename}_parsed.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast.success("JSON downloaded successfully");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error(action === "preview" ? "Failed to view JSON" : "Failed to download JSON");
-    } finally {
-      setLoadingAction(null);
-      setOpen(false);
     }
-  };
 
-  const handleUseInResume = () => {
-    if (file.resume_id) {
-      router.push(`/editor/${file.resume_id}`);
-    } else {
-      toast.info("This file hasn't been parsed yet. Please run parsing first.");
-    }
-    setOpen(false);
-  };
+    const interval = setInterval(poll, 2500);
+    poll();
 
-  const handleUseForCoverLetter = () => {
-    router.push(`/dashboard/ai-chat?fileId=${fileId}&filename=${encodeURIComponent(file.original_filename || "")}`);
-    setOpen(false);
-  };
-
-  const handleReparse = () => {
-    onReparse(file);
-    setOpen(false);
-  };
-
-  const handleDelete = () => {
-    onDelete(fileId);
-    setOpen(false);
-  };
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [jobId, progress, router, status]);
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className={cn(
-          "grid h-8 w-8 place-items-center rounded-lg border border-white/10",
-          "bg-kv-surface-2 text-kv-text-muted transition hover:bg-kv-surface-4 hover:text-kv-text-primary"
-        )}
-        aria-label="Open file actions"
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-kv-text-muted outline-none transition hover:bg-white/[0.05] hover:text-kv-text-primary"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </DropdownMenuTrigger>
 
-      {open && (
-        <>
-          <button
-            type="button"
-            aria-label="Close menu"
-            className="fixed inset-0 z-40 cursor-default"
-            onClick={() => setOpen(false)}
+        <DropdownMenuContent
+          align="end"
+          style={{
+            width: "220px",
+            background: "#111214",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "12px",
+            fontFamily: "var(--font-jetbrains), monospace",
+            fontSize: "13px",
+            padding: "6px",
+            boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
+          }}
+          className="animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150"
+        >
+          <DropdownMenuItem
+            disabled={!canDownload}
+            onClick={() => {
+              if (canDownload) {
+                window.location.href = `/api/files/${fileId}/download`;
+              }
+            }}
+            style={{
+              padding: "10px 14px",
+              color: canDownload ? "#9c9c9d" : "#4b4c4d",
+              cursor: canDownload ? "pointer" : "not-allowed",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+            onMouseEnter={(e) => {
+              if (canDownload) {
+                e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                e.currentTarget.style.color = "#f3f3f3";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = canDownload ? "#9c9c9d" : "#4b4c4d";
+            }}
+          >
+            <Download className="h-4 w-4" />
+            <span>Download</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => setReparseOpen(true)}
+            style={{
+              padding: "10px 14px",
+              color: "#9c9c9d",
+              cursor: "pointer",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+              e.currentTarget.style.color = "#f3f3f3";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "#9c9c9d";
+            }}
+          >
+            <RefreshCcw className="h-4 w-4" />
+            <span>Re-parse</span>
+          </DropdownMenuItem>
+
+          <div
+            style={{
+              height: "1px",
+              background: "rgba(255,255,255,0.06)",
+              margin: "6px 0",
+            }}
           />
 
-          <div className="absolute right-0 top-10 z-50 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#111214] p-1 shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
-            <button
-              type="button"
-              disabled={isProcessing || loadingAction === "open"}
-              onClick={handleOpenOriginal}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-kv-text-secondary transition hover:bg-white/[0.05] hover:text-kv-text-primary disabled:opacity-50"
-            >
-              {loadingAction === "open" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ExternalLink className="h-4 w-4" />
-              )}
-              Open Original
-            </button>
+          <DropdownMenuItem
+            onClick={handleDelete}
+            style={{
+              padding: "10px 14px",
+              color: "#ff8c8c",
+              cursor: "pointer",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,99,99,0.1)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Delete</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog
+        open={reparseOpen}
+        onOpenChange={(value) => {
+          if (isBusy) return;
+          setReparseOpen(value);
+          if (!value) resetReparse();
+        }}
+      >
+        <DialogContent className="border-kv-border-soft bg-kv-surface-1 text-kv-text-primary sm:max-w-xl">
+          <DialogHeader>
+            <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
+              RE_PARSE_FILE
+            </p>
+            <DialogTitle className="text-[18px]">
+              {fileName || "Selected file"}
+            </DialogTitle>
+          </DialogHeader>
 
-            {isParsed && (
-              <button
-                type="button"
-                disabled={loadingAction === "preview"}
-                onClick={() => handleFetchParsedJson("preview")}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-kv-text-secondary transition hover:bg-white/[0.05] hover:text-kv-text-primary disabled:opacity-50"
-              >
-                {loadingAction === "preview" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileJson className="h-4 w-4" />
-                )}
-                Preview JSON
-              </button>
-            )}
+          {status === "idle" ? (
+            <div className="space-y-4">
+              <ParserModeSelector
+                value={mode}
+                onChange={setMode}
+                plan={plan}
+              />
 
-            <button
-              type="button"
-              disabled={isProcessing}
-              onClick={handleReparse}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-kv-text-secondary transition hover:bg-white/[0.05] hover:text-kv-text-primary disabled:opacity-50"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Re-parse
-            </button>
+              <div className="flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setReparseOpen(false)}
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-kv-surface-2 px-4 font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] text-kv-text-secondary transition hover:bg-kv-surface-4 hover:text-kv-text-primary"
+                >
+                  Cancel
+                </button>
 
-            <div className="my-1 h-px bg-white/[0.06]" />
-
-            <button
-              type="button"
-              disabled={!file.resume_id}
-              onClick={handleUseInResume}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-[#e7c59a] transition hover:bg-[#e7c59a]/10 disabled:opacity-50"
-            >
-              <FileEdit className="h-4 w-4" />
-              Use in Resume
-            </button>
-
-            <button
-              type="button"
-              disabled={!isParsed}
-              onClick={handleUseForCoverLetter}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-kv-accent-violet transition hover:bg-kv-accent-violet/10 disabled:opacity-50"
-            >
-              <Sparkles className="h-4 w-4" />
-              Cover Letter
-            </button>
-
-            {isParsed && (
-              <button
-                type="button"
-                disabled={loadingAction === "download"}
-                onClick={() => handleFetchParsedJson("download")}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-kv-accent-blue transition hover:bg-kv-accent-blue/10 disabled:opacity-50"
-              >
-                {loadingAction === "download" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Download JSON
-              </button>
-            )}
-
-            <div className="my-1 h-px bg-white/[0.06]" />
-
-            <button
-              type="button"
-              disabled={isProcessing}
-              onClick={handleDelete}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-[#ff8c8c] transition hover:bg-kv-accent-red/10 disabled:opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+                <button
+                  type="button"
+                  onClick={startReparse}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-kv-cta-bg px-5 text-kv-cta-text font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] shadow-[0_3px_0_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.25)] transition hover:bg-white active:translate-y-[2px] active:shadow-none"
+                >
+                  Start Re-parse
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ParseProgressBar
+              status={status}
+              progress={progress}
+              label={label}
+              error={error}
+              onTryAgain={() => {
+                setStatus("idle");
+                setProgress(0);
+                setLabel("Waiting to start");
+                setError(null);
+                setJobId(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
