@@ -659,6 +659,7 @@ export type Database = {
           seo_description: string | null
           seo_title: string | null
           slug: string | null
+          source_parse_job_id: string | null
           theme: string
           title: string
           updated_at: string
@@ -677,6 +678,7 @@ export type Database = {
           seo_description?: string | null
           seo_title?: string | null
           slug?: string | null
+          source_parse_job_id?: string | null
           theme?: string
           title: string
           updated_at?: string
@@ -695,6 +697,7 @@ export type Database = {
           seo_description?: string | null
           seo_title?: string | null
           slug?: string | null
+          source_parse_job_id?: string | null
           theme?: string
           title?: string
           updated_at?: string

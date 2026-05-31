@@ -1,9 +1,30 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server"
+import { structureResumeFromJob } from "@/lib/ai/resume-ai"
 
-// TODO: POST structure parsed text into ResumeData JSON
-// - Accept raw parsed text from LlamaParse/Reducto
-// - Use Groq AI to structure into resume schema
-// - Validate with Zod
-export async function POST() {
-  return NextResponse.json({ message: "Structured" });
+export async function POST(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get("authorization")
+    const secret = process.env.INTERNAL_API_SECRET
+
+    if (!secret || authHeader !== secret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const body = await req.json()
+    const { jobId } = body
+
+    if (!jobId) {
+      return NextResponse.json({ error: "jobId is required" }, { status: 400 })
+    }
+
+    const result = await structureResumeFromJob(jobId)
+
+    return NextResponse.json({ success: true, resumeId: result.resumeId })
+  } catch (error) {
+    console.error("[ai/structure] Internal Error:", error)
+    return NextResponse.json(
+      { success: false, error: "AI structuring failed." },
+      { status: 500 }
+    )
+  }
 }

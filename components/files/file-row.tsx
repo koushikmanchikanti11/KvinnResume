@@ -10,7 +10,7 @@ export type FileRowData = {
   mode: string;
   status: string;
   pages: number | null;
-  created: string | null;
+  updated: string | null;
   storagePath?: string | null;
 };
 
@@ -65,52 +65,87 @@ function normalizeType(type?: string | null) {
 }
 
 function normalizeMode(mode?: string | null) {
-  if (mode === "nano-mini") return "Nano Mini";
-  if (mode === "nano-pro") return "Nano Pro";
+  if (mode === "nano_mini") return "Nano Mini";
+  if (mode === "nano_pro") return "Nano Pro";
   if (mode === "auto") return "Auto";
   return "Nano";
 }
 
 export function FileTableRow({ file, plan }: FileRowProps) {
   return (
-    <tr className="border-b border-white/[0.05] transition hover:bg-white/[0.025]">
-      <td className="px-4 py-3">
+    <tr
+      className="group border-b transition-colors hover:bg-white/[0.025]"
+      style={{ borderColor: "rgba(255,255,255,0.06)" }}
+    >
+      <td className="px-5 py-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-kv-surface-4">
-            <FileText className="h-4 w-4 text-kv-text-muted" />
+          <span
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border transition-colors group-hover:border-white/15"
+            style={{
+              background: "#1b1c1e",
+              borderColor: "rgba(255,255,255,0.1)",
+            }}
+          >
+            <FileText className="h-4 w-4" style={{ color: "#9c9c9d" }} />
           </span>
 
-          <span className="truncate text-[14px] font-medium text-kv-text-primary">
-            {file.fileName}
-          </span>
+          <div className="min-w-0">
+            <p
+              className="truncate text-[14px] font-medium leading-none"
+              style={{ color: "#f3f3f3" }}
+            >
+              {file.fileName}
+            </p>
+          </div>
         </div>
       </td>
 
-      <td className="px-3 py-3 font-jetbrains text-[12px] text-kv-text-muted">
+      <td
+        className="px-3 py-3.5 font-jetbrains text-[12px]"
+        style={{ color: "#9c9c9d" }}
+      >
         {formatBytes(file.size)}
       </td>
 
-      <td className="px-3 py-3 font-jetbrains text-[12px] uppercase text-kv-text-muted">
-        {normalizeType(file.type)}
+      <td className="px-3 py-3.5">
+        <span
+          className="inline-flex rounded-md border px-2 py-1 font-jetbrains text-[10px] uppercase tracking-[0.12em]"
+          style={{
+            color: "#9c9c9d",
+            borderColor: "rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.03)",
+          }}
+        >
+          {normalizeType(file.type)}
+        </span>
       </td>
 
-      <td className="px-3 py-3 font-jetbrains text-[12px] text-kv-text-muted">
+      <td
+        className="px-3 py-3.5 font-jetbrains text-[12px]"
+        style={{ color: "#f3f3f3" }}
+      >
         {normalizeMode(file.mode)}
       </td>
 
-      <td className="px-3 py-3">
+      <td className="px-3 py-3.5">
         <ParserStatusBadge status={file.status} />
       </td>
 
-      <td className="px-3 py-3 font-jetbrains text-[12px] text-kv-text-muted">
+      <td
+        className="px-3 py-3.5 font-jetbrains text-[12px]"
+        style={{ color: "#9c9c9d" }}
+      >
         {file.pages ?? "—"}
       </td>
 
-      <td className="px-3 py-3 font-jetbrains text-[12px] text-kv-text-muted">
-        {formatDate(file.created)}
+      <td
+        className="px-3 py-3.5 font-jetbrains text-[12px]"
+        style={{ color: "#9c9c9d" }}
+      >
+        {formatDate(file.updated)}
       </td>
 
-      <td className="px-4 py-3 text-right">
+      <td className="px-4 py-3.5 text-right">
         <FileActionMenu
           fileId={file.id}
           fileName={file.fileName}
@@ -124,19 +159,37 @@ export function FileTableRow({ file, plan }: FileRowProps) {
 
 export function FileMobileCard({ file, plan }: FileRowProps) {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-kv-surface-3 p-4">
+    <article
+      className="rounded-[14px] border p-4"
+      style={{
+        background: "#111214",
+        borderColor: "rgba(255,255,255,0.1)",
+      }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/10 bg-kv-surface-4">
-            <FileText className="h-4 w-4 text-kv-text-muted" />
+          <span
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border"
+            style={{
+              background: "#1b1c1e",
+              borderColor: "rgba(255,255,255,0.1)",
+            }}
+          >
+            <FileText className="h-4 w-4" style={{ color: "#9c9c9d" }} />
           </span>
 
           <div className="min-w-0">
-            <p className="line-clamp-1 text-[14px] font-semibold text-kv-text-primary">
+            <p
+              className="line-clamp-1 text-[14px] font-semibold leading-5"
+              style={{ color: "#f3f3f3" }}
+            >
               {file.fileName}
             </p>
 
-            <p className="mt-1 font-jetbrains text-[11px] uppercase tracking-[0.08em] text-kv-text-disabled">
+            <p
+              className="mt-1 font-jetbrains text-[11px] uppercase tracking-[0.08em]"
+              style={{ color: "#6a6b6c" }}
+            >
               {formatBytes(file.size)} • {normalizeType(file.type)}
             </p>
           </div>
@@ -150,41 +203,58 @@ export function FileMobileCard({ file, plan }: FileRowProps) {
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
+      <div
+        className="mt-4 grid grid-cols-2 gap-3 border-t pt-4"
+        style={{ borderColor: "rgba(255,255,255,0.06)" }}
+      >
         <div>
-          <p className="font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
+          <p
+            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
+            style={{ color: "#6a6b6c" }}
+          >
             Mode
           </p>
-          <p className="mt-1 text-kv-text-secondary">
+          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
             {normalizeMode(file.mode)}
           </p>
         </div>
 
         <div>
-          <p className="font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
-            Pages
-          </p>
-          <p className="mt-1 text-kv-text-secondary">{file.pages ?? "—"}</p>
-        </div>
-
-        <div>
-          <p className="font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
-            Created
-          </p>
-          <p className="mt-1 text-kv-text-secondary">
-            {formatDate(file.created)}
-          </p>
-        </div>
-
-        <div>
-          <p className="font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
+          <p
+            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
+            style={{ color: "#6a6b6c" }}
+          >
             Status
           </p>
           <div className="mt-1">
             <ParserStatusBadge status={file.status} />
           </div>
         </div>
+
+        <div>
+          <p
+            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
+            style={{ color: "#6a6b6c" }}
+          >
+            Pages
+          </p>
+          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
+            {file.pages ?? "—"}
+          </p>
+        </div>
+
+        <div>
+          <p
+            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
+            style={{ color: "#6a6b6c" }}
+          >
+            Created
+          </p>
+          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
+            {formatDate(file.updated)}
+          </p>
+        </div>
       </div>
-    </div>
+    </article>
   );
 }

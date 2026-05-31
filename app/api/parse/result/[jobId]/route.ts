@@ -22,7 +22,7 @@ export async function GET(
 
     let { data: job, error: jobError } = await supabase
       .from("parse_jobs")
-      .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items")
+      .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items, error_message")
       .eq("id", jobId)
       .eq("user_id", user.id)
       .single();
@@ -34,7 +34,7 @@ export async function GET(
     // Trigger finalization if completed but not yet structured
     if (
       (job.status === "running" || job.status === "completed") &&
-      !job.parsed_json
+      (!job.raw_markdown || !job.parsed_json)
     ) {
       await finalizeParseJob(jobId);
 
@@ -42,7 +42,7 @@ export async function GET(
       // Re-fetch job data after finalization
       const { data: refreshedJob } = await supabase
         .from("parse_jobs")
-        .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items")
+        .select("id, status, quality_score, pages_count, provider, created_at, metadata, parsed_json, raw_markdown, raw_text, parsed_items, error_message")
         .eq("id", jobId)
         .eq("user_id", user.id)
         .single();
@@ -50,28 +50,67 @@ export async function GET(
       if (refreshedJob) job = refreshedJob;
     }
 
-    let resumeId = null;
+
+    // Extract resumeId from metadata
+    let resumeId: string | null = null;
     if (job.metadata && typeof job.metadata === "object" && "resume_id" in job.metadata) {
-      resumeId = (job.metadata as any).resume_id;
+      resumeId = (job.metadata as Record<string, unknown>).resume_id as string;
     }
 
+    // Determine response based on status
+    const isCompleted = job.status === "completed";
+    const hasResumeId = Boolean(resumeId);
+    const hasParsedJson = Boolean(job.parsed_json);
+    const isStructureFailed = job.status === "failed";
+
+    // Success case: parsed_json exists + resumeId exists
+    if (isCompleted && hasResumeId && hasParsedJson) {
+      return NextResponse.json({
+        success: true,
+        status: "completed",
+        jobId: job.id,
+        resumeId,
+        redirectTo: `/editor/${resumeId}`,
+        quality_score: job.quality_score,
+        pages_count: job.pages_count,
+        provider: job.provider,
+        created_at: job.created_at,
+      }, { status: 200 });
+    }
+
+    // Structure failed case
+    if (isStructureFailed) {
+      return NextResponse.json({
+        success: false,
+        status: "failed",
+        jobId: job.id,
+        message: job.error_message || "Parse failed. Please retry.",
+        has_raw_markdown: Boolean(job.raw_markdown),
+        has_raw_text: Boolean(job.raw_text),
+        quality_score: job.quality_score,
+        pages_count: job.pages_count,
+        provider: job.provider,
+        created_at: job.created_at,
+      }, { status: 200 });
+    }
+
+    // Still in progress or other states
     return NextResponse.json({
-      jobId: job.id,
+      success: false,
       status: job.status,
-      resumeId: resumeId,
+      jobId: job.id,
+      resumeId: null,
       quality_score: job.quality_score,
       pages_count: job.pages_count,
       provider: job.provider,
       created_at: job.created_at,
-
-      // optional debug/useful fields
       has_raw_markdown: Boolean(job.raw_markdown),
       has_raw_text: Boolean(job.raw_text),
       has_parsed_items: Boolean(job.parsed_items),
       has_parsed_json: Boolean(job.parsed_json),
     }, { status: 200 });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Parse result error:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

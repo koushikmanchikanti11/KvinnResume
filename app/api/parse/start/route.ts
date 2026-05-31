@@ -126,7 +126,13 @@ export async function POST(req: Request) {
         await incrementParseCount(user.id);
 
         const jobId = crypto.randomUUID();
-        const provider = (cached.metadata?.provider as string) || (mode === "nano_pro" ? "reducto" : "llamaparse");
+        const cachedProvider = (cached.metadata as any)?.provider;
+        const provider =
+          cachedProvider === "reducto" || cachedProvider === "llamaparse"
+            ? cachedProvider
+            : mode === "nano_pro"
+              ? "reducto"
+              : "llamaparse";
 
         const { error: cachedInsertError } = await supabase.from("parse_jobs").insert({
           id: jobId,
@@ -163,35 +169,21 @@ export async function POST(req: Request) {
           .eq("user_id", user.id);
 
         // Trigger AI structuring for this user's job (fire and forget)
-        structureResumeFromJob(jobId)
-          .then(async () => {
-            await supabase.from("parse_jobs").update({
-              status: "completed",
-              completed_at: new Date().toISOString(),
-            }).eq("id", jobId).eq("user_id", user.id);
+        structureResumeFromJob(jobId).catch(async (error) => {
+          await supabase.from("parse_jobs").update({
+            status: "failed",
+            error_message: error?.message || "AI structuring failed",
+            failed_at: new Date().toISOString(),
+          }).eq("id", jobId).eq("user_id", user.id);
 
-            await supabase.from("resume_files").update({
-              parse_status: "completed",
-            }).eq("id", file.id).eq("user_id", user.id);
+          await supabase.from("resume_files").update({
+            parse_status: "failed",
+          }).eq("id", file.id).eq("user_id", user.id);
 
-            await redis.set(`job:parse:${jobId}:status`, "completed", { ex: 3600 });
-          })
-          .catch(async (error) => {
-            await supabase.from("parse_jobs").update({
-              status: "failed",
-              error_message: error?.message || "AI structuring failed",
-              failed_at: new Date().toISOString(),
-            }).eq("id", jobId).eq("user_id", user.id);
-
-            await supabase.from("resume_files").update({
-              parse_status: "failed",
-            }).eq("id", file.id).eq("user_id", user.id);
-
-            await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
-            await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
-          });
-
-        return NextResponse.json({ jobId, status: "running" }, { status: 201 });
+          await addCredits(user.id, cost, "parse_refund_failed_job", "parse_jobs", jobId);
+          await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
+        });
+        return NextResponse.json({ jobId, status: "running", cached: true }, { status: 201 });
       }
       // If cached is null, fall through to fresh parse below
     }
@@ -274,7 +266,7 @@ export async function POST(req: Request) {
     }
 
     // 11. Return jobId
-    return NextResponse.json({ jobId, status: "pending" }, { status: 201 });
+    return NextResponse.json({ jobId, status: "running" }, { status: 201 });
 
   } catch (err: any) {
     console.error("Parse start error:", err);

@@ -51,7 +51,8 @@ export async function startParseJob(mode: ParseMode, jobId: string) {
       external_job_id: externalJobId,
       provider,
       status: "running"
-    }).eq("id", jobId);
+    }).eq("id", jobId)
+      .eq("user_id", job.user_id);
 
     await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
   } catch (err: any) {
@@ -102,7 +103,8 @@ export async function checkParseJob(jobId: string): Promise<ParseStatus> {
           external_job_id: fallbackId,
           provider: "reducto",
           status: "running"
-        }).eq("id", jobId);
+        }).eq("id", jobId)
+          .eq("user_id", job.user_id);
 
         await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
         return "running";
@@ -118,7 +120,11 @@ export async function checkParseJob(jobId: string): Promise<ParseStatus> {
     }
 
     if (normalizedStatus !== job.status) {
-      await supabase.from("parse_jobs").update({ status: normalizedStatus }).eq("id", jobId);
+      await supabase
+        .from("parse_jobs")
+        .update({ status: normalizedStatus })
+        .eq("id", jobId)
+        .eq("user_id", job.user_id);
       await redis.set(`job:parse:${jobId}:status`, normalizedStatus, { ex: 3600 });
     }
 
@@ -130,20 +136,60 @@ export async function checkParseJob(jobId: string): Promise<ParseStatus> {
 }
 
 // 3. Finalize Job (called once when provider reports completed, before AI structuring)
-export async function finalizeParseJob(jobId: string) {
+export async function finalizeParseJob(jobId: string): Promise<{
+  status: ParseStatus;
+  resumeId?: string;
+  redirectTo?: string;
+  reason?: string;
+  message?: string;
+  quality_score?: number | null;
+  pages_count?: number | null;
+}> {
   // Race guard — prevent double-execution from concurrent requests
   const finalizeKey = `lock:finalize:${jobId}`;
   const guard = await redis.setnx(finalizeKey, "1");
-  if (!guard) return; // already running or done
-  await redis.expire(finalizeKey, 120); // 2 min TTL
 
-  const supabase = await createClient();
-  const { data: job } = await supabase.from("parse_jobs").select("*").eq("id", jobId).single();
+  if (!guard) {
+    return {
+      status: "running",
+      reason: "finalize_locked",
+      message: "Finalizing parse result.",
+    };
+  }
 
-  if (!job || !job.external_job_id) throw new Error("Job not ready to finalize");
-  if (job.parsed_json) return; // Already finalized
+  await redis.expire(finalizeKey, 120);
 
   try {
+    const supabase = await createClient();
+
+    const { data: job } = await supabase
+      .from("parse_jobs")
+      .select("*")
+      .eq("id", jobId)
+      .single();
+
+    if (!job || !job.external_job_id) {
+      throw new Error("Job not ready to finalize");
+    }
+
+    // Already finalized: return existing resumeId if available
+    if (job.parsed_json) {
+      const { data: resume } = await supabase
+        .from("resumes")
+        .select("id")
+        .eq("source_parse_job_id", jobId)
+        .eq("user_id", job.user_id)
+        .maybeSingle();
+
+      return {
+        status: "completed",
+        resumeId: resume?.id,
+        redirectTo: resume?.id ? `/editor/${resume.id}` : undefined,
+        quality_score: job.quality_score,
+        pages_count: job.pages_count,
+      };
+    }
+
     let result: NormalizedParseResult;
 
     if (job.provider === "llamaparse") {
@@ -155,47 +201,70 @@ export async function finalizeParseJob(jobId: string) {
     }
 
     // Save raw parsed data — status stays "running" while AI structuring happens
-    const currentMetadata = (job.metadata as Record<string, any>) || {};
-    currentMetadata.pages_count = result.pages_count;
+    const currentMetadata =
+      job.metadata && typeof job.metadata === "object" && !Array.isArray(job.metadata)
+        ? (job.metadata as Record<string, unknown>)
+        : {};
 
-    await supabase.from("parse_jobs").update({
-      status: "running",
-      raw_markdown: result.raw_markdown,
-      raw_text: result.raw_text,
-      parsed_items: result.parsed_items,
-      pages_count: result.pages_count,
-      metadata: {
-        ...currentMetadata,
-        ...result.metadata,
+    await supabase
+      .from("parse_jobs")
+      .update({
+        status: "running",
+        raw_markdown: result.raw_markdown,
+        raw_text: result.raw_text,
+        parsed_items: result.parsed_items,
         pages_count: result.pages_count,
-      },
-      completed_at: new Date().toISOString(),
-    }).eq("id", jobId);
+        metadata: {
+          ...currentMetadata,
+          ...result.metadata,
+          pages_count: result.pages_count,
+        },
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId)
+      .eq("user_id", job.user_id);
 
     await redis.set(`job:parse:${jobId}:status`, "running", { ex: 3600 });
 
-    // Trigger AI Structuring — this sets status to "completed" when done
-    //await structureResumeFromJob(jobId);
-    // TEMP: AI structuring is not implemented yet.
-    // For now, complete only the raw parser stage.
-    // Later, re-enable structureResumeFromJob(jobId) after lib/ai/resume-ai.ts is ready.
+    let structured: Awaited<ReturnType<typeof structureResumeFromJob>>;
 
-    await supabase.from("parse_jobs").update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-    }).eq("id", jobId);
+    try {
+      structured = await structureResumeFromJob(jobId);
 
-    await redis.set(`job:parse:${jobId}:status`, "completed", { ex: 3600 });
+      console.log(
+        `[parser-router] AI structuring succeeded for job ${jobId}, resumeId: ${structured.resumeId}`
+      );
+    } catch (structureErr: unknown) {
+      console.error(
+        `[parser-router] AI structuring failed for job ${jobId}:`,
+        structureErr
+      );
+
+      // structureResumeFromJob already marks job as failed.
+      return {
+        status: "failed",
+        reason: "structure_failed",
+        message: "Resume parsed, but AI structuring failed. Please retry.",
+      };
+    }
 
     // After structuring succeeds: write result to cache for future users with same file
-    const { data: fileRow } = await supabase
-      .from("resume_files")
-      .select("checksum")
-      .eq("id", job.resume_file_id)
-      .single();
+    let fileRow: { checksum: string | null } | null = null;
+
+    if (job.resume_file_id) {
+      const { data } = await supabase
+        .from("resume_files")
+        .select("checksum")
+        .eq("id", job.resume_file_id)
+        .eq("user_id", job.user_id)
+        .maybeSingle();
+
+      fileRow = data;
+    }
 
     if (fileRow?.checksum) {
-      const cacheKey = `cache:parse:${fileRow.checksum}:${job.parser_mode}`;
+      const cacheKey = `cache:parse:v2:${fileRow.checksum}:${job.parser_mode}`;
+
       const cacheValue: NormalizedParseResult = {
         raw_markdown: result.raw_markdown,
         raw_text: result.raw_text,
@@ -203,31 +272,75 @@ export async function finalizeParseJob(jobId: string) {
         metadata: result.metadata,
         pages_count: result.pages_count,
       };
-      await redis.set(cacheKey, JSON.stringify(cacheValue), { ex: 604800 }); // 7 days
+
+      await redis.set(cacheKey, JSON.stringify(cacheValue), { ex: 604800 });
+
+      await redis.del(
+        `lock:parse:${job.user_id}:${fileRow.checksum}:${job.parser_mode}`
+      );
     }
 
-    // Release user-scoped lock
-    await redis.del(`lock:parse:${job.user_id}:${fileRow?.checksum}:${job.parser_mode}`);
-
+    return {
+      status: "completed",
+      resumeId: structured.resumeId,
+      redirectTo: `/editor/${structured.resumeId}`,
+    };
   } catch (err: any) {
     console.error(`Error finalizing job ${jobId}:`, err);
+
     await failJob(jobId, err.message);
+
+    return {
+      status: "failed",
+      reason: "finalize_failed",
+      message: err.message || "Failed to finalize parse job.",
+    };
+  } finally {
+    await redis.del(finalizeKey);
   }
 }
 
 async function failJob(jobId: string, errorMsg: string) {
   const supabase = await createClient();
-  await supabase.from("parse_jobs").update({
-    status: "failed",
-    error_message: errorMsg,
-    failed_at: new Date().toISOString()
-  }).eq("id", jobId);
+
+  const { data: job } = await supabase
+    .from("parse_jobs")
+    .select("resume_file_id, user_id")
+    .eq("id", jobId)
+    .single();
+
+  if (!job?.user_id) {
+    await supabase
+      .from("parse_jobs")
+      .update({
+        status: "failed",
+        error_message: errorMsg,
+        failed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+
+    await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
+    return;
+  }
+
+  await supabase
+    .from("parse_jobs")
+    .update({
+      status: "failed",
+      error_message: errorMsg,
+      failed_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("user_id", job.user_id);
 
   await redis.set(`job:parse:${jobId}:status`, "failed", { ex: 3600 });
 
-  const { data: job } = await supabase.from("parse_jobs").select("resume_file_id").eq("id", jobId).single();
-  if (job?.resume_file_id) {
-    await supabase.from("resume_files").update({ parse_status: "failed" }).eq("id", job.resume_file_id);
+  if (job.resume_file_id) {
+    await supabase
+      .from("resume_files")
+      .update({ parse_status: "failed" })
+      .eq("id", job.resume_file_id)
+      .eq("user_id", job.user_id);
   }
 }
 

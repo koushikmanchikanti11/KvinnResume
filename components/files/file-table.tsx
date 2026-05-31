@@ -1,9 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
 import {
-  FileTableRow,
   FileMobileCard,
+  FileTableRow,
   type FileRowData,
 } from "./file-row";
+import { createClient } from "@/lib/supabase/server";
 
 type FileTableProps = {
   search?: string;
@@ -40,7 +40,7 @@ function normalizeDbFile(row: Record<string, any>): FileRowData {
     mode: getString(row, ["parser_mode", "mode"], "nano"),
     status: getString(row, ["parse_status", "status"], "idle"),
     pages: getNumber(row, ["page_count", "pages", "num_pages"]),
-    created: getString(row, ["created_at"], ""),
+    updated: getString(row, ["created_at"], ""),
     storagePath: getString(row, ["storage_path", "file_path", "path"], ""),
   };
 }
@@ -66,14 +66,24 @@ export async function FileTable({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-kv-accent-red/25 bg-kv-accent-red/10 p-5">
-        <p className="font-jetbrains text-[11px] uppercase tracking-[0.14em] text-[#ff8c8c]">
+      <section
+        className="rounded-[14px] border p-5"
+        style={{
+          background: "rgba(255,99,99,0.08)",
+          borderColor: "rgba(255,99,99,0.25)",
+        }}
+      >
+        <p
+          className="font-jetbrains text-[11px] uppercase tracking-[0.14em]"
+          style={{ color: "#ff8c8c" }}
+        >
           FILE_QUERY_FAILED
         </p>
-        <p className="mt-2 text-[13px] text-kv-text-secondary">
+
+        <p className="mt-2 text-[13px]" style={{ color: "#f3f3f3" }}>
           {error.message}
         </p>
-      </div>
+      </section>
     );
   }
 
@@ -84,61 +94,109 @@ export async function FileTable({
         ? file.fileName.toLowerCase().includes(search.toLowerCase())
         : true;
 
-      const normalizedStatus = file.status.toLowerCase();
       const matchesStatus =
-        status === "all" ? true : normalizedStatus === status.toLowerCase();
+        status === "all"
+          ? true
+          : file.status.toLowerCase() === status.toLowerCase();
 
       return matchesSearch && matchesStatus;
     });
 
   return (
-    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-kv-surface-3">
-      <div className="flex flex-col gap-1 border-b border-white/[0.06] px-4 py-3 sm:px-5">
-        <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
+    <section
+      className="overflow-hidden rounded-[18px] border"
+      style={{
+        background: "#111214",
+        borderColor: "rgba(255,255,255,0.1)",
+        boxShadow:
+          "inset 0 1px 0 rgba(255,255,255,0.04), 0 18px 50px rgba(0,0,0,0.24)",
+      }}
+    >
+      {/* Table Header */}
+      <div
+        className="flex flex-col gap-2 border-b px-5 py-5 sm:px-6"
+        style={{ borderColor: "rgba(255,255,255,0.06)" }}
+      >
+        <p
+          className="font-jetbrains text-[10px] uppercase tracking-[0.2em]"
+          style={{ color: "#9c9c9d" }}
+        >
           SOURCE_FILES
         </p>
-        <h2 className="text-[16px] font-semibold text-kv-text-primary">
-          File Table
-        </h2>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <h2
+            className="text-[20px] font-semibold tracking-[-0.03em]"
+            style={{ color: "#f3f3f3" }}
+          >
+            File Table
+          </h2>
+
+          <p
+            className="font-jetbrains text-[11px] uppercase tracking-[0.12em]"
+            style={{ color: "#6a6b6c" }}
+          >
+            {files.length} file{files.length === 1 ? "" : "s"}
+          </p>
+        </div>
       </div>
 
       {files.length === 0 ? (
-        <div className="p-8 text-center">
-          <p className="font-jetbrains text-[11px] uppercase tracking-[0.16em] text-kv-accent-amber">
+        <div className="flex min-h-[240px] flex-col items-center justify-center px-6 py-10 text-center">
+          <p
+            className="font-jetbrains text-[11px] uppercase tracking-[0.16em]"
+            style={{ color: "#e7c59a" }}
+          >
             NO_FILES_FOUND
           </p>
-          <p className="mt-2 text-[13px] text-kv-text-muted">
-            Upload your first resume file using the Upload File button.
+
+          <h3
+            className="mt-3 text-[18px] font-semibold tracking-[-0.02em]"
+            style={{ color: "#f3f3f3" }}
+          >
+            No source files yet
+          </h3>
+
+          <p
+            className="mt-2 max-w-md text-[13px] leading-6"
+            style={{ color: "#9c9c9d" }}
+          >
+            Upload your first resume file using the Upload File button. Parsed
+            files will appear here with mode, status, pages, and actions.
           </p>
         </div>
       ) : (
         <>
+          {/* Desktop Table */}
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[920px] table-fixed">
-              <thead className="bg-kv-surface-2">
-                <tr className="border-b border-white/[0.06]">
-                  <th className="w-[27%] px-4 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+            <table className="w-full min-w-[960px] table-fixed border-collapse">
+              <thead style={{ background: "#0b0c0d" }}>
+                <tr
+                  className="border-b"
+                  style={{ borderColor: "rgba(255,255,255,0.06)" }}
+                >
+                  <th className="w-[30%] px-4 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     File name
                   </th>
-                  <th className="w-[10%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[10%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Size
                   </th>
-                  <th className="w-[10%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[10%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Type
                   </th>
-                  <th className="w-[12%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[12%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Mode
                   </th>
-                  <th className="w-[13%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[13%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Status
                   </th>
-                  <th className="w-[8%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[8%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Pages
                   </th>
-                  <th className="w-[11%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[10%] px-3 py-3 text-left font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Created
                   </th>
-                  <th className="w-[9%] px-4 py-3 text-right font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
+                  <th className="w-[7%] px-4 py-3 text-right font-jetbrains text-[10px] uppercase tracking-[0.14em] text-[#6a6b6c]">
                     Actions
                   </th>
                 </tr>
@@ -152,6 +210,7 @@ export async function FileTable({
             </table>
           </div>
 
+          {/* Mobile Cards */}
           <div className="grid gap-3 p-3 md:hidden">
             {files.map((file) => (
               <FileMobileCard key={file.id} file={file} plan={plan} />

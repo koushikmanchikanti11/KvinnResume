@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     const pages_estimate = null;
 
     const fileId = crypto.randomUUID();
-    const ext = file.name.split('.').pop();
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const storagePath = `${user.id}/${fileId}.${ext}`;
 
     await uploadFile(supabase, "resume-originals", storagePath, buffer, {
@@ -94,6 +94,11 @@ export async function POST(req: Request) {
 
     if (insertError || !insertedFile) {
       console.error("Failed to insert resume_file:", insertError);
+
+      await supabase.storage
+        .from("resume-originals")
+        .remove([storagePath]);
+
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
