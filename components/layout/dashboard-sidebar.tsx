@@ -22,7 +22,7 @@ import {
 const mainNav = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "⌘1" },
   { name: "Files", href: "/files", icon: File, shortcut: "⌘2" },
-  { name: "My Resumes", href: "/resumes", icon: FileText, shortcut: "⌘3" },
+  { name: "My Resumes", href: "/resume", icon: FileText, shortcut: "⌘3" },
   { name: "AI Chat", href: "/ai-chat", icon: MessageSquare, shortcut: "⌘4" },
   { name: "Templates", href: "/templates", icon: LayoutTemplate, shortcut: "⌘5" },
 ];
@@ -47,128 +47,142 @@ export function DashboardSidebar() {
 
   return (
     <aside
-      className="hidden md:flex flex-col flex-shrink-0"
+      className="hidden md:flex md:w-[248px] md:shrink-0 md:flex-col"
       style={{
-        width: "248px",
         height: "calc(100vh - 64px)",
-        position: "sticky",
-        top: "64px",
         background: "linear-gradient(180deg, #07080a 0%, #040506 100%)",
-        borderRight: "1px solid rgba(255, 255, 255, 0.06)",
-        padding: "16px 12px",
-        overflowY: "auto",
+        borderRight: "1px solid rgba(255,255,255,0.06)",
+        overflow: "hidden",
       }}
     >
-      {/* MAIN Section */}
-      <SectionLabel>MAIN</SectionLabel>
-      <div className="space-y-0.5 mb-4">
-        {mainNav.map((item) => (
-          <NavItem
-            key={item.name}
-            href={item.href}
-            icon={item.icon}
-            label={item.name}
-            shortcut={item.shortcut}
-            active={isActive(item.href)}
-          />
-        ))}
-      </div>
-
-      {/* CREATE Section */}
-      <SectionLabel>CREATE</SectionLabel>
-
-      <div
-        className="mb-4"
+      <nav
+        className="flex-1 overflow-y-auto px-3 py-4"
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
+          scrollbarWidth: "thin",
+          scrollbarColor: "rgba(255,255,255,0.12) transparent",
         }}
       >
-        <button
-          style={{
-            width: "100%",
-            height: "36px",
-            borderRadius: "8px",
-            background: "#e6e6e6",
-            color: "#2f3031",
-            fontSize: "12px",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            fontFamily: "var(--font-jetbrains), monospace",
-            textTransform: "uppercase",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            border: "none",
-            cursor: "pointer",
-            boxShadow:
-              "rgba(0,0,0,0.4) 0px 1.5px 0.5px 2.5px, rgb(0,0,0) 0px 0px 0.5px 1px, rgba(0,0,0,0.25) 0px 2px 1px 1px inset, rgba(255,255,255,0.2) 0px 1px 1px 1px inset",
-          }}
-        >
-          <Upload size={14} />
-          UPLOAD RESUME
-        </button>
+        <SectionLabel>MAIN</SectionLabel>
+        <div className="mb-4 space-y-0.5">
+          {mainNav.map((item) => (
+            <NavItem
+              key={item.name}
+              href={item.href}
+              icon={item.icon}
+              label={item.name}
+              shortcut={item.shortcut}
+              active={isActive(item.href)}
+            />
+          ))}
+        </div>
 
-        <button
-          style={{
-            width: "100%",
-            height: "36px",
-            borderRadius: "8px",
-            background: "transparent",
-            color: "#f3f3f3",
-            fontSize: "12px",
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            fontFamily: "var(--font-jetbrains), monospace",
-            textTransform: "uppercase" as const,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            border: "1px solid rgba(255,255,255,0.12)",
-            cursor: "pointer",
-          }}
-        >
-          <Plus size={14} />
-          NEW RESUME
-        </button>
-      </div>
+        <SectionLabel>CREATE</SectionLabel>
+        <div className="mb-4 flex flex-col gap-3">
+          <Link
+            href="/files"
+            style={{
+              width: "100%",
+              height: "36px",
+              borderRadius: "8px",
+              background: "#e6e6e6",
+              color: "#2f3031",
+              fontSize: "12px",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              fontFamily: "var(--font-jetbrains), monospace",
+              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              border: "none",
+              cursor: "pointer",
+              textDecoration: "none",
+              boxShadow:
+                "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+              transition: "transform 160ms ease, box-shadow 160ms ease",
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = "translateY(1px)";
+              e.currentTarget.style.boxShadow =
+                "0 1px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow =
+                "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+            }}
+          >
+            <Upload size={14} />
+            UPLOAD RESUME
+          </Link>
 
-      {/* MANAGE Section */}
-      <SectionLabel>MANAGE</SectionLabel>
-      <div className="space-y-0.5 mb-4">
-        {manageNav.map((item) => (
-          <NavItem
-            key={item.name}
-            href={item.href}
-            icon={item.icon}
-            label={item.name}
-            active={isActive(item.href)}
-          />
-        ))}
-      </div>
+          <Link
+            href="/resume/new"
+            style={{
+              width: "100%",
+              height: "36px",
+              borderRadius: "8px",
+              background: "transparent",
+              color: "#f3f3f3",
+              fontSize: "12px",
+              fontWeight: 500,
+              letterSpacing: "0.04em",
+              fontFamily: "var(--font-jetbrains), monospace",
+              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              cursor: "pointer",
+              textDecoration: "none",
+              transition: "border-color 160ms ease, background 160ms ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+              e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+            }}
+          >
+            <Plus size={14} />
+            NEW RESUME
+          </Link>
+        </div>
 
-      {/* SYSTEM Section */}
-      <SectionLabel>SYSTEM</SectionLabel>
-      <div className="space-y-0.5 mb-4">
-        {systemNav.map((item) => (
-          <NavItem
-            key={item.name}
-            href={item.href}
-            icon={item.icon}
-            label={item.name}
-            active={isActive(item.href)}
-          />
-        ))}
-      </div>
+        <SectionLabel>MANAGE</SectionLabel>
+        <div className="mb-4 space-y-0.5">
+          {manageNav.map((item) => (
+            <NavItem
+              key={item.name}
+              href={item.href}
+              icon={item.icon}
+              label={item.name}
+              active={isActive(item.href)}
+            />
+          ))}
+        </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+        <SectionLabel>SYSTEM</SectionLabel>
+        <div className="space-y-0.5">
+          {systemNav.map((item) => (
+            <NavItem
+              key={item.name}
+              href={item.href}
+              icon={item.icon}
+              label={item.name}
+              active={isActive(item.href)}
+            />
+          ))}
+        </div>
+      </nav>
 
-      {/* Sidebar Footer: Credits Used Meter */}
-      <SidebarCreditsMeter />
+      <footer className="shrink-0 px-3 pb-4 pt-2">
+        <SidebarCreditsMeter />
+      </footer>
     </aside>
   );
 }
@@ -176,14 +190,27 @@ export function DashboardSidebar() {
 function SidebarCreditsMeter() {
   const { credits, loading } = useCredits();
 
-  // If loading or not available, use defaults for skeleton
-  const maxCredits = credits?.plan === 'premium' ? 2000 : 1000;
-  const used = credits?.monthly_ai_credits_used ?? 0;
   const balance = credits?.credits_balance ?? 0;
-  
-  const total = used + balance;
-  const percentage = total > 0 ? (used / total) * 100 : 0;
-  const isHigh = percentage > 90;
+  const used = credits?.monthly_ai_credits_used ?? 0;
+  const plan = credits?.plan ?? "free";
+
+  const baseLimit =
+    plan === "premium"
+      ? 2000
+      : plan === "pro"
+        ? 1000
+        : 50;
+
+  const totalCredits = Math.max(baseLimit, balance + used, balance, 1);
+  const balancePercentage = Math.max(
+    0,
+    Math.min(100, (balance / totalCredits) * 100)
+  );
+
+  const isLow = balancePercentage <= 20;
+  const isMedium = balancePercentage > 20 && balancePercentage <= 50;
+
+  const barColor = isLow ? "#ff6363" : isMedium ? "#e7c59a" : "#00ac5c";
 
   return (
     <div
@@ -205,9 +232,9 @@ function SidebarCreditsMeter() {
           marginBottom: "8px",
         }}
       >
-        CREDITS USED
+        CREDITS BALANCE
       </div>
-      {/* Progress bar */}
+
       <div
         style={{
           width: "100%",
@@ -220,16 +247,21 @@ function SidebarCreditsMeter() {
       >
         <div
           style={{
-            width: loading ? "0%" : `${Math.min(percentage, 100)}%`,
+            width: loading ? "0%" : `${balancePercentage}%`,
             height: "100%",
-            background: isHigh ? "#ff6363" : "#e7c59a",
+            background: barColor,
             borderRadius: "3px",
-            transition: "width 300ms ease",
+            transition: "width 300ms ease, background 300ms ease",
           }}
         />
       </div>
+
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
           fontSize: "11px",
           fontFamily: "var(--font-jetbrains), monospace",
           color: "#9c9c9d",
@@ -238,16 +270,20 @@ function SidebarCreditsMeter() {
         {loading ? (
           <span className="animate-pulse">Loading...</span>
         ) : credits ? (
-          `${used.toLocaleString()} / ${total.toLocaleString()}`
+          <>
+            <span>{balance.toLocaleString()}</span>
+            <span style={{ color: "#6a6b6c" }}>
+              / {totalCredits.toLocaleString()}
+            </span>
+          </>
         ) : (
-          "---"
+          <span>---</span>
         )}
       </div>
     </div>
   );
 }
 
-/* Section Label */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -267,7 +303,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* Nav Item */
 function NavItem({
   href,
   icon: Icon,
@@ -295,7 +330,9 @@ function NavItem({
         fontWeight: 500,
         color: active ? "#ffffff" : "#9c9c9d",
         background: active ? "#111214" : "transparent",
-        border: active ? "1px solid rgba(255,255,255,0.08)" : "1px solid transparent",
+        border: active
+          ? "1px solid rgba(255,255,255,0.08)"
+          : "1px solid transparent",
         textDecoration: "none",
         position: "relative",
         transition: "background 160ms ease, color 160ms ease",
@@ -314,7 +351,6 @@ function NavItem({
         }
       }}
     >
-      {/* Amber left rail for active */}
       {active && (
         <span
           style={{
@@ -328,14 +364,24 @@ function NavItem({
           }}
         />
       )}
-      <Icon size={16} style={{ flexShrink: 0, color: active ? "#ffffff" : "#9c9c9d" }} />
-      <span className="flex-1">{label}</span>
+
+      <Icon
+        size={16}
+        style={{
+          flexShrink: 0,
+          color: active ? "#ffffff" : "#9c9c9d",
+        }}
+      />
+
+      <span className="flex-1 truncate">{label}</span>
+
       {shortcut && (
         <span
           style={{
             fontSize: "11px",
             fontFamily: "var(--font-jetbrains), monospace",
             color: "#6a6b6c",
+            flexShrink: 0,
           }}
         >
           {shortcut}
