@@ -1,260 +1,302 @@
+"use client";
+
 import { FileText } from "lucide-react";
-import { ParserStatusBadge } from "./parser-status-badge";
-import { FileActionMenu } from "./file-action-menu";
 
-export type FileRowData = {
+import FileActionMenu from "./file-action-menu";
+import ParseProgressBar from "./parse-progress-bar";
+import type { ParseStatus } from "./parser-status-badge";
+import type { ParserMode } from "./parser-mode-selector";
+
+export type FileRowAction =
+  | "view"
+  | "reParse"
+  | "useInResume"
+  | "downloadJson"
+  | "delete";
+
+export interface FileRowRecord {
   id: string;
-  fileName: string;
-  size: number | null;
-  type: string;
-  mode: string;
-  status: string;
+  name: string;
+  type: "PDF" | "DOCX" | "TXT";
+  status: ParseStatus;
+  parserMode: ParserMode | null;
   pages: number | null;
-  updated: string | null;
-  storagePath?: string | null;
-};
-
-type FileRowProps = {
-  file: FileRowData;
-  plan?: string | null;
-};
-
-function formatBytes(bytes?: number | null) {
-  if (!bytes) return "—";
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let index = 0;
-
-  while (value >= 1024 && index < units.length - 1) {
-    value = value / 1024;
-    index++;
-  }
-
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
+  creditsUsed: number | null;
+  updatedAt: string;
+  parseProgress?: number;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
+interface FileRowProps {
+  file: FileRowRecord;
+  onAction: (action: FileRowAction, fileId: string) => void;
+}
 
-  const diff = Date.now() - new Date(value).getTime();
-  const minutes = Math.floor(diff / 60000);
+function getParserModeLabel(mode: ParserMode | null) {
+  switch (mode) {
+    case "nano":
+      return "Nano";
+    case "nano_mini":
+      return "Nano Mini";
+    case "nano_pro":
+      return "Nano Pro";
+    case "auto":
+      return "Auto";
+    default:
+      return "—";
+  }
+}
+
+function formatRelativeTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const seconds = Math.max(0, Math.floor(diffMs / 1000));
+  const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+  const years = Math.floor(days / 365);
 
-  if (minutes < 1) return "just now";
+  if (seconds < 60) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (weeks < 4) return `${weeks}w ago`;
+  if (months < 12) return `${months}mo ago`;
 
-  return `${days}d ago`;
+  return `${years}y ago`;
 }
 
-function normalizeType(type?: string | null) {
-  if (!type) return "DOC";
+function clampProgress(progress?: number) {
+  if (typeof progress !== "number") return 0;
 
-  const value = type.toLowerCase();
-
-  if (value.includes("pdf")) return "PDF";
-  if (value.includes("word")) return "DOCX";
-  if (value.includes("docx")) return "DOCX";
-  if (value.includes("doc")) return "DOC";
-  if (value.includes("text") || value.includes("txt")) return "TXT";
-
-  return type.toUpperCase().slice(0, 6);
+  return Math.max(0, Math.min(100, Math.round(progress)));
 }
 
-function normalizeMode(mode?: string | null) {
-  if (mode === "nano_mini") return "Nano Mini";
-  if (mode === "nano_pro") return "Nano Pro";
-  if (mode === "auto") return "Auto";
-  return "Nano";
-}
+export default function FileRow({ file, onAction }: FileRowProps) {
+  const isRunning = file.status === "running";
+  const isPending = file.status === "pending";
+  const progress = clampProgress(file.parseProgress);
 
-export function FileTableRow({ file, plan }: FileRowProps) {
   return (
     <tr
-      className="group border-b transition-colors hover:bg-white/[0.025]"
-      style={{ borderColor: "rgba(255,255,255,0.06)" }}
+      style={{
+        height: "52px",
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        transition: "background 160ms ease",
+        cursor: "default",
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.background = "rgba(255,255,255,0.02)";
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.background = "transparent";
+      }}
     >
-      <td className="px-5 py-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border transition-colors group-hover:border-white/15"
+      {/* Name */}
+      <td
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          minWidth: "160px",
+          maxWidth: "220px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: isRunning || isPending ? "flex-start" : "center",
+            gap: "9px",
+            minWidth: 0,
+            width: "100%",
+          }}
+        >
+          <FileText
+            size={14}
             style={{
-              background: "#1b1c1e",
-              borderColor: "rgba(255,255,255,0.1)",
+              color: "#6a6b6c",
+              flexShrink: 0,
+              marginTop: isRunning || isPending ? "2px" : 0,
+            }}
+          />
+
+          <div
+            style={{
+              minWidth: 0,
+              width: "100%",
+              maxWidth: "180px",
             }}
           >
-            <FileText className="h-4 w-4" style={{ color: "#9c9c9d" }} />
-          </span>
-
-          <div className="min-w-0">
-            <p
-              className="truncate text-[14px] font-medium leading-none"
-              style={{ color: "#f3f3f3" }}
+            <div
+              title={file.name}
+              style={{
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "#f3f3f3",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "180px",
+                lineHeight: 1.25,
+              }}
             >
-              {file.fileName}
-            </p>
+              {file.name}
+            </div>
+
+            {(isRunning || isPending) && (
+              <div
+                style={{
+                  marginTop: "6px",
+                  width: "100%",
+                }}
+              >
+                <ParseProgressBar
+                  status={file.status}
+                  progress={progress}
+                  size="sm"
+                  label={isPending ? "Queued…" : "Parsing…"}
+                  showPercentage={isRunning}
+                />
+              </div>
+            )}
           </div>
         </div>
       </td>
 
+      {/* Type */}
       <td
-        className="px-3 py-3.5 font-jetbrains text-[12px]"
-        style={{ color: "#9c9c9d" }}
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+        }}
       >
-        {formatBytes(file.size)}
-      </td>
-
-      <td className="px-3 py-3.5">
         <span
-          className="inline-flex rounded-md border px-2 py-1 font-jetbrains text-[10px] uppercase tracking-[0.12em]"
           style={{
+            height: "20px",
+            padding: "0 7px",
+            display: "inline-flex",
+            alignItems: "center",
+            background: "#1b1c1e",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "5px",
+            fontFamily:
+              "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+            fontSize: "11px",
+            fontWeight: 500,
             color: "#9c9c9d",
-            borderColor: "rgba(255,255,255,0.1)",
-            background: "rgba(255,255,255,0.03)",
           }}
         >
-          {normalizeType(file.type)}
+          {file.type}
         </span>
       </td>
 
+      {/* Status */}
       <td
-        className="px-3 py-3.5 font-jetbrains text-[12px]"
-        style={{ color: "#f3f3f3" }}
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+        }}
       >
-        {normalizeMode(file.mode)}
+        <FileStatusCell status={file.status} />
       </td>
 
-      <td className="px-3 py-3.5">
-        <ParserStatusBadge status={file.status} />
-      </td>
-
+      {/* Parser */}
       <td
-        className="px-3 py-3.5 font-jetbrains text-[12px]"
-        style={{ color: "#9c9c9d" }}
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#9c9c9d",
+        }}
+      >
+        {getParserModeLabel(file.parserMode)}
+      </td>
+
+      {/* Pages */}
+      <td
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#6a6b6c",
+        }}
       >
         {file.pages ?? "—"}
       </td>
 
+      {/* Credits */}
       <td
-        className="px-3 py-3.5 font-jetbrains text-[12px]"
-        style={{ color: "#9c9c9d" }}
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#6a6b6c",
+        }}
       >
-        {formatDate(file.updated)}
+        {file.creditsUsed ?? "—"}
       </td>
 
-      <td className="px-4 py-3.5 text-right">
+      {/* Updated */}
+      <td
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#6a6b6c",
+        }}
+      >
+        {formatRelativeTime(file.updatedAt)}
+      </td>
+
+      {/* Actions */}
+      <td
+        style={{
+          padding: "0 16px",
+          verticalAlign: "middle",
+          whiteSpace: "nowrap",
+          textAlign: "right",
+        }}
+      >
         <FileActionMenu
           fileId={file.id}
-          fileName={file.fileName}
-          plan={plan}
-          canDownload={Boolean(file.storagePath)}
+          fileName={file.name}
+          status={file.status}
+          onView={() => onAction("view", file.id)}
+          onReParse={() => onAction("reParse", file.id)}
+          onUseInResume={() => onAction("useInResume", file.id)}
+          onDownloadJson={() => onAction("downloadJson", file.id)}
+          onDelete={() => onAction("delete", file.id)}
         />
       </td>
     </tr>
   );
 }
 
-export function FileMobileCard({ file, plan }: FileRowProps) {
-  return (
-    <article
-      className="rounded-[14px] border p-4"
-      style={{
-        background: "#111214",
-        borderColor: "rgba(255,255,255,0.1)",
-      }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border"
-            style={{
-              background: "#1b1c1e",
-              borderColor: "rgba(255,255,255,0.1)",
-            }}
-          >
-            <FileText className="h-4 w-4" style={{ color: "#9c9c9d" }} />
-          </span>
+function FileStatusCell({ status }: { status: ParseStatus }) {
+  const ParserStatusBadge = require("./parser-status-badge").default as React.ComponentType<{
+    status: ParseStatus;
+  }>;
 
-          <div className="min-w-0">
-            <p
-              className="line-clamp-1 text-[14px] font-semibold leading-5"
-              style={{ color: "#f3f3f3" }}
-            >
-              {file.fileName}
-            </p>
-
-            <p
-              className="mt-1 font-jetbrains text-[11px] uppercase tracking-[0.08em]"
-              style={{ color: "#6a6b6c" }}
-            >
-              {formatBytes(file.size)} • {normalizeType(file.type)}
-            </p>
-          </div>
-        </div>
-
-        <FileActionMenu
-          fileId={file.id}
-          fileName={file.fileName}
-          plan={plan}
-          canDownload={Boolean(file.storagePath)}
-        />
-      </div>
-
-      <div
-        className="mt-4 grid grid-cols-2 gap-3 border-t pt-4"
-        style={{ borderColor: "rgba(255,255,255,0.06)" }}
-      >
-        <div>
-          <p
-            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
-            style={{ color: "#6a6b6c" }}
-          >
-            Mode
-          </p>
-          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
-            {normalizeMode(file.mode)}
-          </p>
-        </div>
-
-        <div>
-          <p
-            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
-            style={{ color: "#6a6b6c" }}
-          >
-            Status
-          </p>
-          <div className="mt-1">
-            <ParserStatusBadge status={file.status} />
-          </div>
-        </div>
-
-        <div>
-          <p
-            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
-            style={{ color: "#6a6b6c" }}
-          >
-            Pages
-          </p>
-          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
-            {file.pages ?? "—"}
-          </p>
-        </div>
-
-        <div>
-          <p
-            className="font-jetbrains text-[10px] uppercase tracking-[0.12em]"
-            style={{ color: "#6a6b6c" }}
-          >
-            Created
-          </p>
-          <p className="mt-1 text-[13px]" style={{ color: "#f3f3f3" }}>
-            {formatDate(file.updated)}
-          </p>
-        </div>
-      </div>
-    </article>
-  );
+  return <ParserStatusBadge status={status} />;
 }

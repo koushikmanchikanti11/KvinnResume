@@ -71,8 +71,16 @@ function getLast7DaysActivity(files: ResumeFileRow[]) {
 
 function getActivityPercentage(value: number, max: number) {
   if (max <= 0) return 8;
-
   return Math.max(8, Math.round((value / max) * 100));
+}
+
+function getDayLabel(index: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - (6 - index));
+
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+  });
 }
 
 export function ResumeAnalyticsCard({
@@ -81,6 +89,7 @@ export function ResumeAnalyticsCard({
 }: ResumeAnalyticsCardProps) {
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hoveredBar, setHoveredBar] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -158,7 +167,6 @@ export function ResumeAnalyticsCard({
 
   const maxActivity = useMemo(() => {
     if (!stats) return 0;
-
     return Math.max(...stats.recentActivity, 0);
   }, [stats]);
 
@@ -176,13 +184,21 @@ export function ResumeAnalyticsCard({
     <section
       className="w-full min-w-0 max-md:p-[14px]"
       style={{
+        minHeight: "280px",
         background: "#111214",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: "10px",
         padding: "20px",
+        transition: "border-color 160ms ease, transform 160ms ease",
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
       }}
     >
-      <div className="mb-[14px] flex items-center justify-between gap-3">
+      <div className="mb-[16px] flex items-center justify-between gap-3">
         <div
           style={{
             fontFamily:
@@ -211,6 +227,13 @@ export function ResumeAnalyticsCard({
               fontFamily:
                 "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
               padding: 0,
+              transition: "color 160ms ease",
+            }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = "#e7c59a";
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = "#6a6b6c";
             }}
           >
             View full
@@ -248,12 +271,12 @@ export function ResumeAnalyticsCard({
 
           <div
             style={{
-              marginTop: "16px",
-              paddingTop: "14px",
+              marginTop: "18px",
+              paddingTop: "16px",
               borderTop: "1px solid rgba(255,255,255,0.04)",
             }}
           >
-            <div className="mb-[10px] flex items-center justify-between gap-3">
+            <div className="mb-[12px] flex items-center justify-between gap-3">
               <span
                 style={{
                   fontFamily:
@@ -280,9 +303,9 @@ export function ResumeAnalyticsCard({
             </div>
 
             <div
-              className="flex h-[84px] items-end gap-[6px]"
+              className="flex h-[140px] items-end gap-[8px]"
               style={{
-                padding: "10px",
+                padding: "14px 12px 10px",
                 background: "#1b1c1e",
                 border: "1px solid rgba(255,255,255,0.06)",
                 borderRadius: "8px",
@@ -290,16 +313,47 @@ export function ResumeAnalyticsCard({
             >
               {recentActivity.map((value, index) => {
                 const percentage = getActivityPercentage(value, maxActivity);
+                const hovered = hoveredBar === index;
 
                 return (
                   <div
                     key={`${value}-${index}`}
-                    className="flex min-w-0 flex-1 flex-col items-center gap-[5px]"
+                    className="relative flex min-w-0 flex-1 flex-col items-center gap-[7px]"
+                    onMouseEnter={() => setHoveredBar(index)}
+                    onMouseLeave={() => setHoveredBar(null)}
+                    style={{
+                      cursor: "default",
+                    }}
                   >
+                    {hovered && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          bottom: "calc(100% + 8px)",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          zIndex: 20,
+                          whiteSpace: "nowrap",
+                          background: "#1b1c1e",
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: "6px",
+                          padding: "5px 8px",
+                          fontFamily:
+                            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                          fontSize: "11px",
+                          color: "#f3f3f3",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        {value} {value === 1 ? "upload" : "uploads"}
+                      </div>
+                    )}
+
                     <div
                       style={{
                         width: "100%",
-                        height: "54px",
+                        height: "100px",
                         display: "flex",
                         alignItems: "flex-end",
                       }}
@@ -312,7 +366,15 @@ export function ResumeAnalyticsCard({
                           minHeight: "4px",
                           background: getTrendColor(percentage),
                           borderRadius: "4px 4px 2px 2px",
-                          transition: "height 300ms ease",
+                          opacity: hovered ? 1 : 0.78,
+                          filter: hovered
+                            ? "brightness(1.18)"
+                            : "brightness(1)",
+                          border: hovered
+                            ? "1px solid rgba(255,255,255,0.16)"
+                            : "1px solid transparent",
+                          transition:
+                            "height 300ms ease, opacity 160ms ease, filter 160ms ease, border-color 160ms ease",
                         }}
                       />
                     </div>
@@ -322,10 +384,11 @@ export function ResumeAnalyticsCard({
                         fontFamily:
                           "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
                         fontSize: "9px",
-                        color: "#454647",
+                        color: hovered ? "#9c9c9d" : "#454647",
+                        transition: "color 160ms ease",
                       }}
                     >
-                      {index + 1}
+                      {getDayLabel(index)}
                     </span>
                   </div>
                 );
@@ -406,7 +469,7 @@ function MetricBox({
 
 function ResumeAnalyticsEmpty() {
   return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
+    <div className="flex flex-col items-center justify-center py-10 text-center">
       <BarChart2 size={30} color="#454647" />
 
       <p
@@ -440,13 +503,14 @@ function ResumeAnalyticsSkeleton() {
     <section
       className="w-full min-w-0 max-md:p-[14px]"
       style={{
+        minHeight: "280px",
         background: "#111214",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: "10px",
         padding: "20px",
       }}
     >
-      <div className="mb-[14px] flex items-center justify-between">
+      <div className="mb-[16px] flex items-center justify-between">
         <SkeletonBlock width="116px" height="10px" />
         <SkeletonBlock width="62px" height="12px" />
       </div>
@@ -459,17 +523,17 @@ function ResumeAnalyticsSkeleton() {
 
       <div
         style={{
-          marginTop: "16px",
-          paddingTop: "14px",
+          marginTop: "18px",
+          paddingTop: "16px",
           borderTop: "1px solid rgba(255,255,255,0.04)",
         }}
       >
         <SkeletonBlock width="96px" height="10px" />
 
         <div
-          className="mt-[10px] flex h-[84px] items-end gap-[6px]"
+          className="mt-[12px] flex h-[140px] items-end gap-[8px]"
           style={{
-            padding: "10px",
+            padding: "14px 12px 10px",
             background: "#1b1c1e",
             border: "1px solid rgba(255,255,255,0.06)",
             borderRadius: "8px",
@@ -479,7 +543,7 @@ function ResumeAnalyticsSkeleton() {
             <div
               key={index}
               className="flex flex-1 items-end"
-              style={{ height: "54px" }}
+              style={{ height: "100px" }}
             >
               <div
                 className="animate-pulse"

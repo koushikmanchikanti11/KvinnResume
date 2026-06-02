@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
+"use client";
 
-export type ParserStatus =
+export type ParseStatus =
   | "idle"
   | "pending"
   | "running"
@@ -9,94 +9,122 @@ export type ParserStatus =
   | "cancelled";
 
 type ParserStatusBadgeProps = {
-  status?: ParserStatus | string | null;
-  className?: string;
+  status: ParseStatus;
 };
 
-function normalizeStatus(status?: string | null): ParserStatus {
-  const value = String(status || "idle").toLowerCase();
+function getStatusMeta(status: ParseStatus) {
+  switch (status) {
+    case "idle":
+      return {
+        label: "Idle",
+        dot: "#454647",
+        animated: false,
+        duration: "0ms",
+      };
 
-  if (value === "queued" || value === "uploading") return "pending";
-  if (value === "parsing" || value === "structuring" || value === "enhancing") {
-    return "running";
-  }
-  if (value === "parsed" || value === "ready" || value === "success") {
-    return "completed";
-  }
-  if (value === "error") return "failed";
+    case "pending":
+      return {
+        label: "Pending",
+        dot: "#e7c59a",
+        animated: true,
+        duration: "1.4s",
+      };
 
-  if (
-    value === "idle" ||
-    value === "pending" ||
-    value === "running" ||
-    value === "completed" ||
-    value === "failed" ||
-    value === "cancelled"
-  ) {
-    return value;
-  }
+    case "running":
+      return {
+        label: "Running",
+        dot: "#56c2ff",
+        animated: true,
+        duration: "1.0s",
+      };
 
-  return "idle";
+    case "completed":
+      return {
+        label: "Completed",
+        dot: "#00ac5c",
+        animated: false,
+        duration: "0ms",
+      };
+
+    case "failed":
+      return {
+        label: "Failed",
+        dot: "#ff6363",
+        animated: false,
+        duration: "0ms",
+      };
+
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        dot: "#6a6b6c",
+        animated: false,
+        duration: "0ms",
+      };
+  }
 }
 
-const config: Record<
-  ParserStatus,
-  {
-    label: string;
-    className: string;
-    dot: string;
-  }
-> = {
-  idle: {
-    label: "Idle",
-    className: "border-white/10 bg-white/[0.03] text-kv-text-muted",
-    dot: "bg-kv-text-muted",
-  },
-  pending: {
-    label: "Pending",
-    className: "border-kv-accent-amber/35 bg-kv-accent-amber/10 text-kv-accent-amber",
-    dot: "bg-kv-accent-amber animate-pulse",
-  },
-  running: {
-    label: "Running",
-    className: "border-kv-accent-blue/35 bg-kv-accent-blue/10 text-kv-accent-blue",
-    dot: "bg-kv-accent-blue animate-pulse",
-  },
-  completed: {
-    label: "Completed",
-    className: "border-kv-accent-green/35 bg-kv-accent-green/10 text-kv-accent-green",
-    dot: "bg-kv-accent-green",
-  },
-  failed: {
-    label: "Failed",
-    className: "border-kv-accent-red/35 bg-kv-accent-red/10 text-[#ff8c8c]",
-    dot: "bg-kv-accent-red",
-  },
-  cancelled: {
-    label: "Cancelled",
-    className: "border-white/10 bg-white/[0.03] text-kv-text-muted",
-    dot: "bg-kv-text-disabled",
-  },
-};
-
-export function ParserStatusBadge({
-  status,
-  className,
-}: ParserStatusBadgeProps) {
-  const normalized = normalizeStatus(status);
-  const item = config[normalized];
+export function ParserStatusBadge({ status }: ParserStatusBadgeProps) {
+  const meta = getStatusMeta(status);
 
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
-        "font-jetbrains text-[10px] font-medium uppercase tracking-[0.12em]",
-        item.className,
-        className
-      )}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        height: "22px",
+        padding: "0 8px",
+        background: "#1b1c1e",
+        borderRadius: "6px",
+        color: "#9c9c9d",
+        fontFamily:
+          "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+        fontSize: "11px",
+        fontWeight: 500,
+        whiteSpace: "nowrap",
+      }}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", item.dot)} />
-      {item.label}
+      <style>
+        {`
+          @keyframes parser-status-dot-pulse {
+            0% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.3;
+            }
+            100% {
+              opacity: 1;
+            }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .parser-status-dot-animated {
+              animation-duration: 0.01ms !important;
+              animation-iteration-count: 1 !important;
+            }
+          }
+        `}
+      </style>
+
+      <span
+        className={meta.animated ? "parser-status-dot-animated" : undefined}
+        style={{
+          width: "6px",
+          height: "6px",
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: meta.dot,
+          animation: meta.animated
+            ? `parser-status-dot-pulse ${meta.duration} ease-in-out infinite`
+            : undefined,
+        }}
+      />
+
+      <span>{meta.label}</span>
     </span>
   );
 }
+
+export default ParserStatusBadge;

@@ -1,371 +1,324 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, MoreHorizontal, RefreshCcw, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { ComponentType, ReactNode } from "react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  ParserMode,
-  ParserModeSelector,
-} from "./parser-mode-selector";
-import { ParseProgressBar } from "./parse-progress-bar";
-import type { ParserStatus } from "./parser-status-badge";
+  Download,
+  Eye,
+  FileText,
+  MoreHorizontal,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import type { ParseStatus } from "./parser-status-badge";
 
-type FileActionMenuProps = {
+interface FileActionMenuProps {
   fileId: string;
-  fileName?: string | null;
-  plan?: string | null;
-  canDownload?: boolean;
+  fileName: string;
+  status: ParseStatus;
+  onView?: () => void;
+  onReParse?: () => void;
+  onUseInResume?: () => void;
+  onDownloadJson?: () => void;
+  onDelete?: () => void;
+}
+
+type MenuAction = {
+  label: string;
+  icon: ComponentType<{ size?: number }>;
+  onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
 };
 
-export function FileActionMenu({
+export default function FileActionMenu({
   fileId,
   fileName,
-  plan,
-  canDownload = true,
+  status,
+  onView,
+  onReParse,
+  onUseInResume,
+  onDownloadJson,
+  onDelete,
 }: FileActionMenuProps) {
-  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({
+    top: 0,
+    left: 0,
+  });
 
-  const [reparseOpen, setReparseOpen] = useState(false);
-  const [mode, setMode] = useState<ParserMode>("nano");
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<ParserStatus>("idle");
-  const [progress, setProgress] = useState(0);
-  const [label, setLabel] = useState("Waiting to start");
-  const [error, setError] = useState<string | null>(null);
-
-  const isBusy = status === "pending" || status === "running";
-
-  function resetReparse() {
-    setMode("nano");
-    setJobId(null);
-    setStatus("idle");
-    setProgress(0);
-    setLabel("Waiting to start");
-    setError(null);
-  }
-
-  async function handleDelete() {
-    const ok = window.confirm("Delete this file?");
-    if (!ok) return;
-
-    const response = await fetch(`/api/files/${fileId}`, {
-      method: "DELETE",
-    });
-
-    if (response.ok) {
-      router.refresh();
-    }
-  }
-
-  async function startReparse() {
-    setStatus("pending");
-    setProgress(15);
-    setLabel("Starting re-parse job...");
-    setError(null);
-
-    try {
-      const response = await fetch("/api/parse/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fileId,
-          mode,
-        }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to start re-parse.");
-      }
-
-      const nextJobId = data?.jobId || data?.id || data?.job?.id;
-
-      if (!nextJobId) {
-        throw new Error("Parse started but job id was not returned.");
-      }
-
-      setJobId(nextJobId);
-      setStatus("running");
-      setProgress(35);
-      setLabel("Re-parsing resume...");
-    } catch (err) {
-      setStatus("failed");
-      setProgress(100);
-      setLabel("Re-parse failed.");
-      setError(err instanceof Error ? err.message : "Re-parse failed.");
-    }
-  }
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!jobId || status !== "running") return;
+    setMounted(true);
+  }, []);
 
-    let cancelled = false;
+  useEffect(() => {
+    if (!open) return;
 
-    async function poll() {
-      try {
-        const response = await fetch(`/api/parse/status?jobId=${jobId}`);
-        const data = await response.json().catch(() => null);
+    function updatePosition() {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
 
-        if (!response.ok) {
-          throw new Error(data?.error || "Failed to read parse status.");
-        }
+      const rect = trigger.getBoundingClientRect();
+      const menuWidth = 196;
+      const gap = 4;
 
-        if (cancelled) return;
+      let left = rect.right - menuWidth;
+      let top = rect.bottom + gap;
 
-        const nextStatus = String(data?.status || "").toLowerCase();
+      if (left < 8) left = 8;
 
-        if (nextStatus === "completed") {
-          setStatus("completed");
-          setProgress(100);
-          setLabel("Completed. Redirecting to editor...");
+      const maxLeft = window.innerWidth - menuWidth - 8;
+      if (left > maxLeft) left = maxLeft;
 
-          let resumeId = data?.resumeId || data?.resume_id || data?.result?.resumeId;
+      const menuHeight = 220;
+      if (top + menuHeight > window.innerHeight - 8) {
+        top = rect.top - menuHeight - gap;
+      }
 
-          if (!resumeId) {
-            const resultResponse = await fetch(`/api/parse/result/${jobId}`);
-            const resultData = await resultResponse.json().catch(() => null);
-            resumeId =
-              resultData?.resumeId ||
-              resultData?.resume_id ||
-              resultData?.resume?.id;
-          }
+      setMenuPosition({ top, left });
+    }
 
-          if (resumeId) {
-            setTimeout(() => {
-              router.push(`/editor/${resumeId}`);
-            }, 900);
-          } else {
-            router.refresh();
-          }
+    updatePosition();
 
-          return;
-        }
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
 
-        if (nextStatus === "failed") {
-          setStatus("failed");
-          setProgress(100);
-          setLabel("Re-parse failed.");
-          setError(data?.error || data?.message || "Parser failed.");
-          return;
-        }
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
-        if (nextStatus === "cancelled") {
-          setStatus("cancelled");
-          setProgress(100);
-          setLabel("Re-parse cancelled.");
-          return;
-        }
+  useEffect(() => {
+    if (!open) return;
 
-        setProgress(
-          Math.max(35, Math.min(95, Number(data?.progress || progress + 8)))
-        );
-        setLabel(data?.label || "Re-parsing resume...");
-      } catch (err) {
-        if (!cancelled) {
-          setStatus("failed");
-          setProgress(100);
-          setLabel("Status polling failed.");
-          setError(err instanceof Error ? err.message : "Status polling failed.");
-        }
+    function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as Node;
+
+      if (triggerRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+
+      setOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
       }
     }
 
-    const interval = setInterval(poll, 2500);
-    poll();
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
     };
-  }, [jobId, progress, router, status]);
+  }, [open]);
+
+  function handleItemClick(callback?: () => void, disabled?: boolean) {
+    if (disabled) return;
+
+    callback?.();
+    setOpen(false);
+  }
+
+  const actions: MenuAction[] = [
+    {
+      label: "Open / View content",
+      icon: Eye,
+      onClick: onView,
+      disabled: status === "running" || status === "pending" || !onView,
+    },
+    {
+      label: "Re-parse",
+      icon: RefreshCw,
+      onClick: onReParse,
+      disabled: status === "running" || !onReParse,
+    },
+    {
+      label: "Use in resume",
+      icon: FileText,
+      onClick: onUseInResume,
+      disabled: status !== "completed" || !onUseInResume,
+    },
+    {
+      label: "Download JSON",
+      icon: Download,
+      onClick: onDownloadJson,
+      disabled: status !== "completed" || !onDownloadJson,
+    },
+  ];
+
+  const menu = (
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label={`Actions for ${fileName}`}
+      style={{
+        position: "fixed",
+        top: `${menuPosition.top}px`,
+        left: `${menuPosition.left}px`,
+        width: "196px",
+        background: "#111214",
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: "10px",
+        padding: "6px",
+        boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+        zIndex: 9999,
+        animation: "file-action-menu-fade 160ms ease",
+      }}
+    >
+      <style>
+        {`
+          @keyframes file-action-menu-fade {
+            from {
+              opacity: 0;
+              transform: translateY(-4px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            [role="menu"] {
+              animation-duration: 0.01ms !important;
+            }
+          }
+        `}
+      </style>
+
+      {actions.map((action) => (
+        <MenuItem
+          key={action.label}
+          icon={action.icon}
+          disabled={action.disabled}
+          onClick={() => handleItemClick(action.onClick, action.disabled)}
+        >
+          {action.label}
+        </MenuItem>
+      ))}
+
+      <div
+        style={{
+          height: "1px",
+          background: "rgba(255,255,255,0.06)",
+          margin: "5px 0",
+        }}
+      />
+
+      <MenuItem
+        icon={Trash2}
+        danger
+        disabled={!onDelete}
+        onClick={() => handleItemClick(onDelete, !onDelete)}
+      >
+        Delete
+      </MenuItem>
+    </div>
+  );
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-kv-text-muted outline-none transition hover:bg-white/[0.05] hover:text-kv-text-primary"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent
-          align="end"
-          style={{
-            width: "220px",
-            background: "#111214",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "12px",
-            fontFamily: "var(--font-jetbrains), monospace",
-            fontSize: "13px",
-            padding: "6px",
-            boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
-          }}
-          className="animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150"
-        >
-          <DropdownMenuItem
-            disabled={!canDownload}
-            onClick={() => {
-              if (canDownload) {
-                window.location.href = `/api/files/${fileId}/download`;
-              }
-            }}
-            style={{
-              padding: "10px 14px",
-              color: canDownload ? "#9c9c9d" : "#4b4c4d",
-              cursor: canDownload ? "pointer" : "not-allowed",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-            }}
-            onMouseEnter={(e) => {
-              if (canDownload) {
-                e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                e.currentTarget.style.color = "#f3f3f3";
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = canDownload ? "#9c9c9d" : "#4b4c4d";
-            }}
-          >
-            <Download className="h-4 w-4" />
-            <span>Download</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem
-            onClick={() => setReparseOpen(true)}
-            style={{
-              padding: "10px 14px",
-              color: "#9c9c9d",
-              cursor: "pointer",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-              e.currentTarget.style.color = "#f3f3f3";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "#9c9c9d";
-            }}
-          >
-            <RefreshCcw className="h-4 w-4" />
-            <span>Re-parse</span>
-          </DropdownMenuItem>
-
-          <div
-            style={{
-              height: "1px",
-              background: "rgba(255,255,255,0.06)",
-              margin: "6px 0",
-            }}
-          />
-
-          <DropdownMenuItem
-            onClick={handleDelete}
-            style={{
-              padding: "10px 14px",
-              color: "#ff8c8c",
-              cursor: "pointer",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,99,99,0.1)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-            <span>Delete</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <Dialog
-        open={reparseOpen}
-        onOpenChange={(value) => {
-          if (isBusy) return;
-          setReparseOpen(value);
-          if (!value) resetReparse();
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={`Open actions for ${fileName}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-file-id={fileId}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex items-center justify-center"
+        style={{
+          width: "28px",
+          height: "28px",
+          borderRadius: "6px",
+          background: open ? "rgba(255,255,255,0.06)" : "transparent",
+          border: "none",
+          cursor: "pointer",
+          color: open ? "#9c9c9d" : "#454647",
+          transition: "background 160ms ease, color 160ms ease",
+        }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.background = "rgba(255,255,255,0.06)";
+          event.currentTarget.style.color = "#9c9c9d";
+        }}
+        onMouseLeave={(event) => {
+          if (open) return;
+          event.currentTarget.style.background = "transparent";
+          event.currentTarget.style.color = "#454647";
         }}
       >
-        <DialogContent className="border-kv-border-soft bg-kv-surface-1 text-kv-text-primary sm:max-w-xl">
-          <DialogHeader>
-            <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
-              RE_PARSE_FILE
-            </p>
-            <DialogTitle className="text-[18px]">
-              {fileName || "Selected file"}
-            </DialogTitle>
-          </DialogHeader>
+        <MoreHorizontal size={14} />
+      </button>
 
-          {status === "idle" ? (
-            <div className="space-y-4">
-              <ParserModeSelector
-                value={mode}
-                onChange={setMode}
-                plan={plan}
-              />
-
-              <div className="flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => setReparseOpen(false)}
-                  className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-kv-surface-2 px-4 font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] text-kv-text-secondary transition hover:bg-kv-surface-4 hover:text-kv-text-primary"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={startReparse}
-                  className="inline-flex h-10 items-center justify-center rounded-lg bg-kv-cta-bg px-5 text-kv-cta-text font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] shadow-[0_3px_0_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.25)] transition hover:bg-white active:translate-y-[2px] active:shadow-none"
-                >
-                  Start Re-parse
-                </button>
-              </div>
-            </div>
-          ) : (
-            <ParseProgressBar
-              status={status}
-              progress={progress}
-              label={label}
-              error={error}
-              onTryAgain={() => {
-                setStatus("idle");
-                setProgress(0);
-                setLabel("Waiting to start");
-                setError(null);
-                setJobId(null);
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {mounted && open ? createPortal(menu, document.body) : null}
     </>
+  );
+}
+
+function MenuItem({
+  icon: Icon,
+  children,
+  onClick,
+  disabled = false,
+  danger = false,
+}: {
+  icon: ComponentType<{ size?: number }>;
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: "100%",
+        height: "34px",
+        padding: "0 10px",
+        display: "flex",
+        alignItems: "center",
+        gap: "9px",
+        border: "none",
+        borderRadius: "7px",
+        background: "transparent",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.38 : 1,
+        pointerEvents: disabled ? "none" : "auto",
+        fontSize: "13px",
+        fontWeight: 400,
+        color: danger ? "#ff8c8c" : "#9c9c9d",
+        transition: "background 120ms ease, color 120ms ease",
+        textAlign: "left",
+      }}
+      onMouseEnter={(event) => {
+        if (disabled) return;
+
+        event.currentTarget.style.background = danger
+          ? "rgba(255,99,99,0.08)"
+          : "rgba(255,255,255,0.05)";
+        event.currentTarget.style.color = danger ? "#ff8c8c" : "#f3f3f3";
+      }}
+      onMouseLeave={(event) => {
+        if (disabled) return;
+
+        event.currentTarget.style.background = "transparent";
+        event.currentTarget.style.color = danger ? "#ff8c8c" : "#9c9c9d";
+      }}
+    >
+      <Icon size={14} />
+      <span className="min-w-0 truncate">{children}</span>
+    </button>
   );
 }

@@ -1,246 +1,368 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Upload, FileText, Loader2, AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ParserMode, ParserModeSelector } from "./parser-mode-selector";
+import { useRef, useState } from "react";
+import { UploadCloud } from "lucide-react";
 
-interface UploadedFileResponse {
-  fileId?: string;
-  filename?: string;
-  pages_estimate?: number | null;
-  message?: string;
-  [key: string]: unknown;
+interface UploadDropzoneProps {
+  onFileSelect: (files: File[]) => void;
+  accept?: string;
+  maxSizeMb?: number;
+  disabled?: boolean;
+  compact?: boolean;
 }
 
-type UploadDropzoneProps = {
-  plan?: string | null;
-  defaultMode?: ParserMode;
-  maxSizeMb?: number;
-  
-  // Existing props to maintain compatibility with page.tsx
-  onUploadSuccess?: (fileData: UploadedFileResponse) => void;
-  onUploadStart?: (file: File, parserMode: ParserMode) => void;
-  onUploadError?: (error: Error) => void;
-  parserMode?: ParserMode;
-  defaultParserMode?: ParserMode;
-  onParserModeChange?: (mode: ParserMode) => void;
-  showParserModeSelector?: boolean;
-  isFreeTier?: boolean;
-  disabledParserModes?: ParserMode[];
-  endpoint?: string;
-  maxSizeMB?: number;
-  disabled?: boolean;
-  className?: string;
-};
+function isAcceptedFile(file: File, accept: string) {
+  const fileName = file.name.toLowerCase();
+  const fileType = file.type.toLowerCase();
 
-const allowedTypes = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
-];
+  const acceptParts = accept
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 
-export function UploadDropzone({
-  plan,
-  defaultMode = "nano",
-  maxSizeMb,
-  maxSizeMB,
-  onUploadSuccess,
-  onUploadStart,
-  onUploadError,
-  endpoint = "/api/upload",
-}: UploadDropzoneProps) {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const effectiveMaxSize = maxSizeMb ?? maxSizeMB ?? 15;
-
-  const [mode, setMode] = useState<ParserMode>(defaultMode);
-  const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function validateFile(file: File) {
-    const maxSize = effectiveMaxSize * 1024 * 1024;
-
-    if (!allowedTypes.includes(file.type)) {
-      return "Only PDF, DOCX, DOC, and TXT files are supported in this upload flow.";
+  return acceptParts.some((part) => {
+    if (part.startsWith(".")) {
+      return fileName.endsWith(part);
     }
 
-    if (file.size > maxSize) {
-      return `File is too large. Maximum size is ${effectiveMaxSize}MB.`;
+    if (part.endsWith("/*")) {
+      const baseType = part.replace("/*", "");
+      return fileType.startsWith(baseType);
     }
 
-    return null;
+    return fileType === part;
+  });
+}
+
+function validateFiles(files: File[], accept: string, maxSizeMb: number) {
+  const maxBytes = maxSizeMb * 1024 * 1024;
+
+  for (const file of files) {
+    if (file.size > maxBytes) {
+      return {
+        valid: false,
+        error: `File too large (max ${maxSizeMb}MB)`,
+      };
+    }
+
+    if (!isAcceptedFile(file, accept)) {
+      return {
+        valid: false,
+        error: "Unsupported file type",
+      };
+    }
   }
 
-  function handleFile(file: File) {
-    const validationError = validateFile(file);
+  return {
+    valid: true,
+    error: null,
+  };
+}
 
-    if (validationError) {
-      setError(validationError);
-      setSelectedFile(null);
+export function UploadDropzone({
+  onFileSelect,
+  accept = "application/pdf,.docx,.txt",
+  maxSizeMb = 15,
+  disabled = false,
+  compact = false,
+}: UploadDropzoneProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFiles(files: FileList | File[]) {
+    if (disabled) return;
+
+    const selectedFiles = Array.from(files);
+
+    if (selectedFiles.length === 0) return;
+
+    const validation = validateFiles(selectedFiles, accept, maxSizeMb);
+
+    if (!validation.valid) {
+      setError(validation.error);
       return;
     }
 
     setError(null);
-    setSelectedFile(file);
+    onFileSelect(selectedFiles);
   }
 
-  async function uploadFile() {
-    if (!selectedFile) return;
+  function handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!event.target.files) return;
 
-    setError(null);
-    onUploadStart?.(selectedFile, mode);
+    handleFiles(event.target.files);
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    formData.append("parserMode", mode); // Keeping this as in user's snippet, though api/upload ignores it right now
+    event.target.value = "";
+  }
 
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-      });
+  function handleClick() {
+    if (disabled) return;
 
-      const result = await response.json().catch(() => null);
+    inputRef.current?.click();
+  }
 
-      if (!response.ok) {
-        throw new Error(result?.error || "Upload failed");
-      }
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
 
-      onUploadSuccess?.(result);
+    if (disabled) return;
 
-      startTransition(() => {
-        router.refresh();
-      });
+    setIsDragging(true);
+  }
 
-      setSelectedFile(null);
+  function handleDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
 
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
-    } catch (uploadError) {
-      const msg = uploadError instanceof Error ? uploadError.message : "Upload failed. Please try again.";
-      setError(msg);
-      onUploadError?.(uploadError instanceof Error ? uploadError : new Error(msg));
-    }
+    if (disabled) return;
+
+    setIsDragging(false);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+
+    if (disabled) return;
+
+    setIsDragging(false);
+    handleFiles(event.dataTransfer.files);
   }
 
   return (
-    <section className="rounded-xl border border-white/[0.08] bg-kv-surface-3 p-4 shadow-[inset_1px_1px_0_rgba(255,255,255,0.05)] sm:p-5">
-      <ParserModeSelector value={mode} onChange={setMode} plan={plan || "Free"} />
-
+    <div style={{ width: "100%" }}>
       <div
         role="button"
-        tabIndex={0}
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={handleClick}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleClick();
+          }
         }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-
-          const file = event.dataTransfer.files?.[0];
-          if (file) handleFile(file);
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={compact ? "" : "max-md:p-[20px]"}
+        style={{
+          position: "relative",
+          borderRadius: "12px",
+          transition: "border-color 160ms ease, background 160ms ease",
+          cursor: disabled ? "not-allowed" : "pointer",
+          background: isDragging
+            ? "rgba(231,197,154,0.04)"
+            : "rgba(255,255,255,0.02)",
+          border: `1.5px dashed ${
+            isDragging
+              ? "rgba(231,197,154,0.50)"
+              : "rgba(255,255,255,0.12)"
+          }`,
+          opacity: disabled ? 0.4 : 1,
+          pointerEvents: disabled ? "none" : "auto",
+          padding: compact ? "12px 20px" : "32px",
+          textAlign: compact ? "left" : "center",
+          outline: "none",
         }}
-        className={cn(
-          "mt-5 flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition",
-          "bg-[#07080a]",
-          dragging
-            ? "border-kv-accent-blue bg-kv-accent-blue/10"
-            : "border-white/10 hover:border-white/20 hover:bg-white/[0.025]"
-        )}
+        onFocus={(event) => {
+          event.currentTarget.style.borderColor = "rgba(231,197,154,0.50)";
+        }}
+        onBlur={(event) => {
+          event.currentTarget.style.borderColor = isDragging
+            ? "rgba(231,197,154,0.50)"
+            : "rgba(255,255,255,0.12)";
+        }}
       >
+        <CornerBracket position="top-left" active={isDragging} />
+        <CornerBracket position="top-right" active={isDragging} />
+        <CornerBracket position="bottom-left" active={isDragging} />
+        <CornerBracket position="bottom-right" active={isDragging} />
+
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.txt"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) handleFile(file);
-          }}
+          hidden
+          accept={accept}
+          multiple
+          onChange={handleInputChange}
         />
 
+        {compact ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              minWidth: 0,
+            }}
+          >
+            <UploadCloud
+              size={18}
+              style={{
+                color: isDragging ? "#e7c59a" : "#6a6b6c",
+                transition: "color 160ms ease",
+                flexShrink: 0,
+              }}
+            />
+
+            <span
+              style={{
+                fontSize: "13px",
+                color: "#6a6b6c",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              Drop files here or click to upload
+            </span>
+
+            <span
+              style={{
+                fontSize: "11px",
+                fontFamily:
+                  "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                color: "#454647",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              Max {maxSizeMb}MB
+            </span>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+          >
+            <UploadCloud
+              size={32}
+              className="max-md:!h-[24px] max-md:!w-[24px]"
+              style={{
+                color: isDragging ? "#e7c59a" : "#454647",
+                transition: "color 160ms ease",
+                marginBottom: "12px",
+              }}
+            />
+
+            <div
+              style={{
+                fontFamily:
+                  "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                fontSize: "13px",
+                fontWeight: 500,
+                textTransform: "uppercase",
+                color: "#6a6b6c",
+                letterSpacing: "0.04em",
+              }}
+            >
+              DROP RESUME PDF HERE
+            </div>
+
+            <div
+              style={{
+                fontSize: "13px",
+                color: "#454647",
+                marginTop: "4px",
+              }}
+            >
+              or click to upload
+            </div>
+
+            <div
+              style={{
+                fontSize: "12px",
+                color: "#454647",
+                marginTop: "6px",
+                fontFamily:
+                  "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+              }}
+            >
+              PDF, DOCX, TXT • Max {maxSizeMb}MB
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && (
         <div
-          className={cn(
-            "grid h-14 w-14 place-items-center rounded-xl border",
-            dragging
-              ? "border-kv-accent-blue/40 bg-kv-accent-blue/10"
-              : "border-white/10 bg-kv-surface-2"
-          )}
-        >
-          {selectedFile ? (
-            <FileText className="h-6 w-6 text-kv-accent-green" />
-          ) : (
-            <Upload className="h-6 w-6 text-kv-accent-blue" />
-          )}
-        </div>
-
-        <h3 className="mt-4 text-[18px] font-semibold tracking-[-0.02em] text-kv-text-primary">
-          {selectedFile ? selectedFile.name : "Drop resume file here"}
-        </h3>
-
-        <p className="mt-2 max-w-md text-[13px] leading-6 text-kv-text-muted">
-          {selectedFile
-            ? `${(selectedFile.size / 1024 / 1024).toFixed(2)}MB ready for ${mode} parsing.`
-            : "Upload PDF, DOCX, or TXT. File will be stored in Supabase Storage, then parsed using your selected parser mode."}
-        </p>
-
-        <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 font-jetbrains text-[10px] uppercase tracking-[0.14em] text-kv-text-disabled">
-          Max {effectiveMaxSize}MB • PDF / DOC / DOCX / TXT
-        </div>
-      </div>
-
-      {error ? (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-kv-accent-red/25 bg-kv-accent-red/10 p-3 text-[13px] text-[#ff8c8c]">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
-          Parser selected:{" "}
-          <span className="text-kv-accent-amber">{mode.replace("_", " ")}</span>
-        </p>
-
-        <button
-          type="button"
-          disabled={!selectedFile || isPending}
-          onClick={(e) => {
-            e.stopPropagation();
-            uploadFile();
+          style={{
+            marginTop: "8px",
+            fontSize: "12px",
+            color: "#ff6363",
+            fontFamily:
+              "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
           }}
-          className={cn(
-            "inline-flex h-10 items-center justify-center rounded-lg px-4",
-            "bg-kv-cta-bg text-kv-cta-text",
-            "font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em]",
-            "shadow-[0_3px_0_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.25)]",
-            "transition active:translate-y-[2px] active:shadow-none",
-            "disabled:cursor-not-allowed disabled:opacity-50"
-          )}
         >
-          {isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Uploading
-            </>
-          ) : (
-            <>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Resume
-            </>
-          )}
-        </button>
-      </div>
-    </section>
+          {error}
+        </div>
+      )}
+    </div>
   );
 }
+
+function CornerBracket({
+  position,
+  active,
+}: {
+  position: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  active: boolean;
+}) {
+  const style: React.CSSProperties = {
+    position: "absolute",
+    width: "12px",
+    height: "12px",
+    borderColor: "#e7c59a",
+    opacity: active ? 1 : 0.4,
+    transition: "opacity 160ms ease",
+    pointerEvents: "none",
+  };
+
+  if (position === "top-left") {
+    Object.assign(style, {
+      top: 0,
+      left: 0,
+      borderTop: "2px solid #e7c59a",
+      borderLeft: "2px solid #e7c59a",
+      borderTopLeftRadius: "12px",
+    });
+  }
+
+  if (position === "top-right") {
+    Object.assign(style, {
+      top: 0,
+      right: 0,
+      borderTop: "2px solid #e7c59a",
+      borderRight: "2px solid #e7c59a",
+      borderTopRightRadius: "12px",
+    });
+  }
+
+  if (position === "bottom-left") {
+    Object.assign(style, {
+      bottom: 0,
+      left: 0,
+      borderBottom: "2px solid #e7c59a",
+      borderLeft: "2px solid #e7c59a",
+      borderBottomLeftRadius: "12px",
+    });
+  }
+
+  if (position === "bottom-right") {
+    Object.assign(style, {
+      bottom: 0,
+      right: 0,
+      borderBottom: "2px solid #e7c59a",
+      borderRight: "2px solid #e7c59a",
+      borderBottomRightRadius: "12px",
+    });
+  }
+
+  return <span aria-hidden="true" style={style} />;
+}
+
+export default UploadDropzone;

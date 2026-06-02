@@ -1,139 +1,288 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Upload, FileText, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-    ParserMode,
-    ParserModeSelector,
-} from "./parser-mode-selector";
-import { ParseProgressBar } from "./parse-progress-bar";
-import type { ParserStatus } from "./parser-status-badge";
+import { AlertTriangle, FileText, RotateCcw, X } from "lucide-react";
 
-type UploadFileDialogProps = {
-    plan?: string | null;
-};
+import UploadDropzone from "./upload-dropzone";
+import ParserModeSelector, { type ParserMode } from "./parser-mode-selector";
+import ParserStatusBadge, { type ParseStatus } from "./parser-status-badge";
+import ParseProgressBar from "./parse-progress-bar";
 
-type Phase = "select" | "progress";
+interface UploadFileDialogProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onUploadComplete?: (fileIds: string[]) => void;
+    userPlan?: string | null;
+    defaultMode?: ParserMode;
+}
 
-export function UploadFileDialog({ plan }: UploadFileDialogProps) {
+type QueueItemStatus =
+    | "idle"
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled";
+
+interface QueueItem {
+    localId: string;
+    file: File;
+    fileId: string | null;
+    fileName: string;
+    jobId: string | null;
+    status: QueueItemStatus;
+    progress: number;
+    error: string | null;
+    resumeId: string | null;
+}
+
+interface UploadResponse {
+    fileId?: string;
+    id?: string;
+    fileName?: string;
+    original_filename?: string;
+}
+
+interface StartParseResponse {
+    jobId?: string;
+    id?: string;
+}
+
+interface ParseStatusResponse {
+    status?: ParseStatus | string;
+    progress?: number;
+    resumeId?: string | null;
+    resume_id?: string | null;
+    result?: {
+        resumeId?: string | null;
+        resume_id?: string | null;
+    } | null;
+    metadata?: {
+        resume_id?: string | null;
+        resumeId?: string | null;
+    } | null;
+}
+
+const ACTIVE_STATUSES: QueueItemStatus[] = ["pending", "running"];
+
+function createLocalId() {
+    return `file_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function isActiveStatus(status: QueueItemStatus) {
+    return ACTIVE_STATUSES.includes(status);
+}
+
+function toBadgeStatus(status: QueueItemStatus): ParseStatus {
+    return status;
+}
+
+function normalizeStatus(status: string | undefined | null): QueueItemStatus {
+    if (status === "pending") return "pending";
+    if (status === "running") return "running";
+    if (status === "completed") return "completed";
+    if (status === "failed") return "failed";
+    if (status === "cancelled") return "cancelled";
+
+    return "pending";
+}
+
+function clampProgress(value: unknown) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getModeCreditCost(mode: ParserMode) {
+    if (mode === "nano") return 7;
+    if (mode === "nano_mini") return 10;
+    if (mode === "nano_pro") return 25;
+    return 30;
+}
+
+function getResumeIdFromStatus(data: ParseStatusResponse) {
+    return (
+        data.resumeId ??
+        data.resume_id ??
+        data.result?.resumeId ??
+        data.result?.resume_id ??
+        data.metadata?.resume_id ??
+        data.metadata?.resumeId ??
+        null
+    );
+}
+
+export function UploadFileDialog({
+    isOpen,
+    onClose,
+    onUploadComplete,
+    userPlan,
+    defaultMode = "nano",
+}: UploadFileDialogProps) {
     const router = useRouter();
-    const inputRef = useRef<HTMLInputElement | null>(null);
 
-    const [open, setOpen] = useState(false);
-    const [phase, setPhase] = useState<Phase>("select");
-    const [file, setFile] = useState<File | null>(null);
-    const [mode, setMode] = useState<ParserMode>("nano");
-
-    const [jobId, setJobId] = useState<string | null>(null);
+    const [parserMode, setParserMode] = useState<ParserMode>(defaultMode);
+    const [queue, setQueue] = useState<QueueItem[]>([]);
+    const [closeWarning, setCloseWarning] = useState(false);
     const [resumeId, setResumeId] = useState<string | null>(null);
-    const [status, setStatus] = useState<ParserStatus>("idle");
-    const [progress, setProgress] = useState(0);
-    const [label, setLabel] = useState("Waiting to start");
-    const [error, setError] = useState<string | null>(null);
 
-    const isBusy = status === "pending" || status === "running";
+    const pollTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(
+        new Map()
+    );
 
-    function resetDialog() {
-        setPhase("select");
-        setFile(null);
-        setMode("nano");
-        setJobId(null);
+    const hasActiveTransfers = queue.some((item) => isActiveStatus(item.status));
+    const hasQueuedFiles = queue.length > 0;
+
+    const uploadDisabled =
+        queue.length === 0 ||
+        queue.every((item) => item.status !== "idle" && item.status !== "failed");
+
+    const creditEstimate = useMemo(() => {
+        return queue.length * getModeCreditCost(parserMode);
+    }, [queue.length, parserMode]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        function handleEscape(event: KeyboardEvent) {
+            if (event.key === "Escape") {
+                requestClose();
+            }
+        }
+
+        document.addEventListener("keydown", handleEscape);
+
+        return () => {
+            document.removeEventListener("keydown", handleEscape);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, hasActiveTransfers]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (isOpen) return;
+
+        stopAllPolling();
+        setQueue([]);
+        setCloseWarning(false);
         setResumeId(null);
-        setStatus("idle");
-        setProgress(0);
-        setLabel("Waiting to start");
-        setError(null);
+    }, [isOpen]);
 
-        if (inputRef.current) {
-            inputRef.current.value = "";
+    function updateQueueItem(
+        localId: string,
+        patch: Partial<Omit<QueueItem, "localId">>
+    ) {
+        setQueue((current) =>
+            current.map((item) =>
+                item.localId === localId ? { ...item, ...patch } : item
+            )
+        );
+    }
+
+    function removeQueueItem(localId: string) {
+        setQueue((current) => current.filter((item) => item.localId !== localId));
+    }
+
+    function stopPolling(localId: string) {
+        const timer = pollTimersRef.current.get(localId);
+
+        if (timer) {
+            clearInterval(timer);
+            pollTimersRef.current.delete(localId);
         }
     }
 
-    function validateFile(nextFile: File) {
-        const allowed = [
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "text/plain",
-        ];
-
-        const maxSize = 15 * 1024 * 1024;
-
-        if (!allowed.includes(nextFile.type)) {
-            return "Only PDF, DOC, DOCX, or TXT files are supported.";
+    function stopAllPolling() {
+        for (const timer of pollTimersRef.current.values()) {
+            clearInterval(timer);
         }
 
-        if (nextFile.size > maxSize) {
-            return "File size must be less than 15MB.";
-        }
-
-        return null;
+        pollTimersRef.current.clear();
     }
 
-    function handleFile(nextFile: File) {
-        const validationError = validateFile(nextFile);
-
-        if (validationError) {
-            setError(validationError);
-            setFile(null);
+    function requestClose() {
+        if (hasActiveTransfers) {
+            setCloseWarning(true);
             return;
         }
 
-        setError(null);
-        setFile(nextFile);
+        onClose();
     }
 
-    async function startUploadAndParse() {
-        if (!file) {
-            setError("Please select a file first.");
-            return;
+    function confirmForceClose() {
+        stopAllPolling();
+        setCloseWarning(false);
+        onClose();
+    }
+
+    function handleOverlayClick(event: React.MouseEvent<HTMLDivElement>) {
+        if (event.target === event.currentTarget) {
+            requestClose();
         }
+    }
 
-        setPhase("progress");
-        setStatus("pending");
-        setProgress(8);
-        setLabel("Uploading file to storage...");
-        setError(null);
+    function handleFilesSelected(files: File[]) {
+        const nextItems: QueueItem[] = files.map((file) => ({
+            localId: createLocalId(),
+            file,
+            fileId: null,
+            fileName: file.name,
+            jobId: null,
+            status: "idle",
+            progress: 0,
+            error: null,
+            resumeId: null,
+        }));
 
+        setQueue((current) => [...current, ...nextItems]);
+    }
+
+    async function startUploadForItem(item: QueueItem) {
         try {
+            updateQueueItem(item.localId, {
+                status: "running",
+                progress: 10,
+                error: null,
+            });
+
             const formData = new FormData();
-            formData.append("file", file);
-            formData.append("parserMode", mode);
+            formData.append("file", item.file);
 
             const uploadResponse = await fetch("/api/upload", {
                 method: "POST",
                 body: formData,
             });
 
-            const uploadData = await uploadResponse.json().catch(() => null);
-
             if (!uploadResponse.ok) {
-                throw new Error(uploadData?.error || "Upload failed.");
+                throw new Error("Upload failed");
             }
 
-            const fileId =
-                uploadData?.fileId ||
-                uploadData?.id ||
-                uploadData?.file?.id ||
-                uploadData?.data?.id;
+            const uploadData = (await uploadResponse.json()) as UploadResponse;
+
+            const fileId = uploadData.fileId ?? uploadData.id ?? null;
+            const fileName =
+                uploadData.fileName ?? uploadData.original_filename ?? item.file.name;
 
             if (!fileId) {
-                throw new Error("Upload succeeded but file id was not returned.");
+                throw new Error("Upload response missing fileId");
             }
 
-            setStatus("pending");
-            setProgress(22);
-            setLabel("Starting parse job...");
+            updateQueueItem(item.localId, {
+                fileId,
+                fileName,
+                status: "pending",
+                progress: 25,
+            });
 
             const parseResponse = await fetch("/api/parse/start", {
                 method: "POST",
@@ -142,71 +291,105 @@ export function UploadFileDialog({ plan }: UploadFileDialogProps) {
                 },
                 body: JSON.stringify({
                     fileId,
-                    mode,
+                    mode: parserMode,
                 }),
             });
 
-            const parseData = await parseResponse.json().catch(() => null);
-
             if (!parseResponse.ok) {
-                throw new Error(parseData?.error || "Failed to start parse job.");
+                throw new Error("Failed to start parse job");
             }
 
-            const nextJobId = parseData?.jobId || parseData?.id || parseData?.job?.id;
+            const parseData = (await parseResponse.json()) as StartParseResponse;
+            const jobId = parseData.jobId ?? parseData.id ?? null;
 
-            if (!nextJobId) {
-                throw new Error("Parse started but job id was not returned.");
+            if (!jobId) {
+                throw new Error("Parse response missing jobId");
             }
 
-            setJobId(nextJobId);
-            setStatus("running");
-            setProgress(35);
-            setLabel("Parser is extracting resume data...");
-        } catch (err) {
-            setStatus("failed");
-            setProgress(100);
-            setLabel("Parse flow failed.");
-            setError(err instanceof Error ? err.message : "Something went wrong.");
+            updateQueueItem(item.localId, {
+                jobId,
+                status: "running",
+                progress: 35,
+            });
+
+            startPollingStatus({
+                localId: item.localId,
+                fileId,
+                jobId,
+            });
+        } catch (error) {
+            console.error("Upload/parse pipeline failed:", error);
+
+            updateQueueItem(item.localId, {
+                status: "failed",
+                progress: 100,
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Upload or parsing failed",
+            });
         }
     }
 
-    useEffect(() => {
-        if (!jobId || status !== "running") return;
+    function startPollingStatus({
+        localId,
+        fileId,
+        jobId,
+    }: {
+        localId: string;
+        fileId: string;
+        jobId: string;
+    }) {
+        stopPolling(localId);
 
-        let cancelled = false;
-
-        async function poll() {
+        async function pollOnce() {
             try {
-                const response = await fetch(`/api/parse/status?jobId=${jobId}`);
-                const data = await response.json().catch(() => null);
+                const response = await fetch(`/api/parse/status/${jobId}`, {
+                    method: "GET",
+                    cache: "no-store",
+                });
 
                 if (!response.ok) {
-                    throw new Error(data?.error || "Failed to read parse status.");
+                    throw new Error("Failed to fetch parse status");
                 }
 
-                if (cancelled) return;
+                const statusData = (await response.json()) as ParseStatusResponse;
+                const nextStatus = normalizeStatus(statusData.status);
+                const nextProgress =
+                    nextStatus === "completed"
+                        ? 100
+                        : Math.max(35, clampProgress(statusData.progress));
 
-                const nextStatus = String(data?.status || "").toLowerCase();
+                updateQueueItem(localId, {
+                    status: nextStatus,
+                    progress: nextProgress,
+                });
 
                 if (nextStatus === "completed") {
-                    setStatus("completed");
-                    setProgress(100);
-                    setLabel("Completed. Redirecting to editor...");
+                    stopPolling(localId);
 
-                    let nextResumeId =
-                        data?.resumeId || data?.resume_id || data?.result?.resumeId;
+                    const nextResumeId = getResumeIdFromStatus(statusData);
 
-                    if (!nextResumeId) {
-                        const resultResponse = await fetch(`/api/parse/result/${jobId}`);
-                        const resultData = await resultResponse.json().catch(() => null);
-                        nextResumeId =
-                            resultData?.resumeId ||
-                            resultData?.resume_id ||
-                            resultData?.resume?.id;
+                    updateQueueItem(localId, {
+                        status: "completed",
+                        progress: 100,
+                        resumeId: nextResumeId,
+                    });
+
+                    try {
+                        await fetch(`/api/parse/result?jobId=${jobId}`, {
+                            method: "GET",
+                            cache: "no-store",
+                        });
+                    } catch (resultError) {
+                        console.warn("Parse result confirmation failed:", resultError);
                     }
+
+                    onUploadComplete?.([fileId]);
 
                     if (nextResumeId) {
                         setResumeId(nextResumeId);
+
                         setTimeout(() => {
                             router.push(`/editor/${nextResumeId}`);
                         }, 900);
@@ -217,197 +400,608 @@ export function UploadFileDialog({ plan }: UploadFileDialogProps) {
                     return;
                 }
 
-                if (nextStatus === "failed") {
-                    setStatus("failed");
-                    setProgress(100);
-                    setLabel("Parsing failed.");
-                    setError(data?.error || data?.message || "Parser failed.");
-                    return;
-                }
+                if (nextStatus === "failed" || nextStatus === "cancelled") {
+                    stopPolling(localId);
 
-                if (nextStatus === "cancelled") {
-                    setStatus("cancelled");
-                    setProgress(100);
-                    setLabel("Parse job cancelled.");
-                    return;
+                    updateQueueItem(localId, {
+                        status: nextStatus,
+                        progress: 100,
+                        error:
+                            nextStatus === "failed"
+                                ? "Parsing failed. Try again."
+                                : "Parsing cancelled.",
+                    });
                 }
+            } catch (error) {
+                console.error("Polling parse status failed:", error);
 
-                setStatus("running");
-                setProgress(
-                    Math.max(
-                        35,
-                        Math.min(
-                            95,
-                            Number(data?.progress || data?.percent || progress + 8)
-                        )
-                    )
-                );
-                setLabel(data?.label || "Parser is extracting resume data...");
-            } catch (err) {
-                if (!cancelled) {
-                    setStatus("failed");
-                    setProgress(100);
-                    setLabel("Status polling failed.");
-                    setError(err instanceof Error ? err.message : "Status polling failed.");
-                }
+                stopPolling(localId);
+
+                updateQueueItem(localId, {
+                    status: "failed",
+                    progress: 100,
+                    error:
+                        error instanceof Error
+                            ? error.message
+                            : "Failed to poll parse status",
+                });
             }
         }
 
-        const interval = setInterval(poll, 2500);
-        poll();
+        pollOnce();
 
-        return () => {
-            cancelled = true;
-            clearInterval(interval);
-        };
-    }, [jobId, progress, router, status]);
+        const timer = setInterval(pollOnce, 2000);
+        pollTimersRef.current.set(localId, timer);
+    }
+
+    function handleUploadAndParse() {
+        const itemsToRun = queue.filter(
+            (item) => item.status === "idle" || item.status === "failed"
+        );
+
+        for (const item of itemsToRun) {
+            startUploadForItem(item);
+        }
+    }
+
+    function handleRetry(localId: string) {
+        const item = queue.find((queueItem) => queueItem.localId === localId);
+
+        if (!item) return;
+
+        stopPolling(localId);
+
+        updateQueueItem(localId, {
+            fileId: null,
+            jobId: null,
+            status: "idle",
+            progress: 0,
+            error: null,
+            resumeId: null,
+        });
+
+        startUploadForItem({
+            ...item,
+            fileId: null,
+            jobId: null,
+            status: "idle",
+            progress: 0,
+            error: null,
+            resumeId: null,
+        });
+    }
+
+    if (!isOpen) return null;
 
     return (
-        <Dialog
-            open={open}
-            onOpenChange={(value) => {
-                if (isBusy) return;
-                setOpen(value);
-                if (!value) resetDialog();
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Upload resume"
+            onMouseDown={handleOverlayClick}
+            className="items-end md:items-center"
+            style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.65)",
+                zIndex: 200,
+                display: "flex",
+                justifyContent: "center",
+                padding: "24px",
+                animation: "upload-dialog-fade 200ms ease",
             }}
         >
-            <DialogTrigger
-                className={cn(
-                    "inline-flex h-10 w-full items-center justify-center rounded-lg bg-kv-cta-bg px-4 text-kv-cta-text hover:bg-white lg:w-auto",
-                    "whitespace-nowrap",
-                    "font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em]",
-                    "shadow-[0_3px_0_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.25)]",
-                    "active:translate-y-[2px] active:shadow-none"
-                )}
+            <style>
+                {`
+          @keyframes upload-dialog-fade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+
+          @keyframes upload-dialog-scale {
+            from {
+              opacity: 0;
+              transform: translateY(8px) scale(0.98);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .upload-dialog-animated {
+              animation-duration: 0.01ms !important;
+              animation-iteration-count: 1 !important;
+            }
+          }
+
+          @media (max-width: 767px) {
+            .upload-dialog-panel {
+              max-width: 100% !important;
+              border-radius: 16px 16px 0 0 !important;
+              align-self: flex-end !important;
+              max-height: 92vh !important;
+            }
+
+            .upload-dialog-overlay {
+              padding: 0 !important;
+            }
+          }
+        `}
+            </style>
+
+            <div
+                className="upload-dialog-panel upload-dialog-animated"
+                onMouseDown={(event) => event.stopPropagation()}
+                style={{
+                    width: "100%",
+                    maxWidth: "520px",
+                    maxHeight: "88vh",
+                    background: "#111214",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    borderRadius: "16px",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    animation:
+                        "upload-dialog-scale 240ms cubic-bezier(0.23, 1, 0.32, 1)",
+                }}
             >
-                <Upload className="mr-2 h-3.5 w-3.5" />
-                Upload File
-            </DialogTrigger>
+                {/* Header */}
+                <div
+                    style={{
+                        height: "52px",
+                        padding: "0 20px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        flexShrink: 0,
+                    }}
+                >
+                    <h2
+                        style={{
+                            margin: 0,
+                            fontSize: "16px",
+                            fontWeight: 600,
+                            color: "#ffffff",
+                        }}
+                    >
+                        Upload Resume
+                    </h2>
 
-            <DialogContent className="max-h-[92vh] overflow-y-auto border-kv-border-soft bg-kv-surface-1 p-0 text-kv-text-primary sm:max-w-3xl">                <DialogHeader className="border-b border-white/[0.06] px-5 py-4">
-                <div className="flex items-center justify-between gap-3">
-                    <div>
-                        <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
-                            UPLOAD_WORKFLOW
-                        </p>
-                        <DialogTitle className="mt-1 text-[18px] font-semibold">
-                            Upload File
-                        </DialogTitle>
-                    </div>
+                    <button
+                        type="button"
+                        aria-label="Close upload dialog"
+                        onClick={requestClose}
+                        style={{
+                            width: "28px",
+                            height: "28px",
+                            borderRadius: "6px",
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "#6a6b6c",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            transition: "background 160ms ease, color 160ms ease",
+                        }}
+                        onMouseEnter={(event) => {
+                            event.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                            event.currentTarget.style.color = "#f3f3f3";
+                        }}
+                        onMouseLeave={(event) => {
+                            event.currentTarget.style.background = "transparent";
+                            event.currentTarget.style.color = "#6a6b6c";
+                        }}
+                    >
+                        <X size={16} />
+                    </button>
                 </div>
-            </DialogHeader>
 
-                <div className="p-5">
-                    {phase === "select" ? (
-                        <div className="space-y-5">
+                {/* Body */}
+                <div
+                    className="max-md:p-4"
+                    style={{
+                        padding: "20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "20px",
+                        overflowY: "auto",
+                    }}
+                >
+                    <UploadDropzone
+                        onFileSelect={handleFilesSelected}
+                        compact={queue.length > 0}
+                        disabled={hasActiveTransfers}
+                    />
+
+                    <div>
+                        <div
+                            style={{
+                                fontFamily:
+                                    "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                                fontSize: "11px",
+                                fontWeight: 500,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.06em",
+                                color: "#454647",
+                                marginBottom: "8px",
+                            }}
+                        >
+                            PARSER MODE
+                        </div>
+
+                        <ParserModeSelector
+                            value={parserMode}
+                            onChange={setParserMode}
+                            plan={userPlan}
+                            disabled={hasActiveTransfers}
+                        />
+                    </div>
+
+                    {queue.length > 0 && (
+                        <div>
                             <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => inputRef.current?.click()}
-                                onDragOver={(event) => event.preventDefault()}
-                                onDrop={(event) => {
-                                    event.preventDefault();
-                                    const droppedFile = event.dataTransfer.files?.[0];
-                                    if (droppedFile) handleFile(droppedFile);
+                                style={{
+                                    fontFamily:
+                                        "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                                    fontSize: "11px",
+                                    fontWeight: 500,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.06em",
+                                    color: "#454647",
+                                    marginBottom: "8px",
                                 }}
-                                className={cn(
-                                    "flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-xl",
-                                    "border border-dashed border-white/10 bg-[#07080a] p-6 text-center",
-                                    "transition hover:border-kv-accent-blue/40 hover:bg-kv-accent-blue/5"
-                                )}
                             >
-                                <input
-                                    ref={inputRef}
-                                    type="file"
-                                    accept=".pdf,.doc,.docx,.txt"
-                                    className="hidden"
-                                    onChange={(event) => {
-                                        const selected = event.target.files?.[0];
-                                        if (selected) handleFile(selected);
-                                    }}
-                                />
-
-                                <div className="grid h-12 w-12 place-items-center rounded-xl border border-white/10 bg-kv-surface-2">
-                                    {file ? (
-                                        <FileText className="h-5 w-5 text-kv-accent-green" />
-                                    ) : (
-                                        <Upload className="h-5 w-5 text-kv-accent-blue" />
-                                    )}
-                                </div>
-
-                                <h3 className="mt-4 text-[17px] font-semibold text-kv-text-primary">
-                                    {file ? file.name : "Drop resume file here"}
-                                </h3>
-
-                                <p className="mt-2 max-w-md text-[13px] leading-6 text-kv-text-muted">
-                                    {file
-                                        ? `${(file.size / 1024 / 1024).toFixed(2)} MB selected.`
-                                        : "Drag and drop PDF, DOC, DOCX, or TXT file, or click to browse."}
-                                </p>
-
-                                <p className="mt-3 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 font-jetbrains text-[10px] uppercase tracking-[0.12em] text-kv-text-disabled">
-                                    Max 15MB • PDF / DOC / DOCX / TXT
-                                </p>
+                                QUEUE
                             </div>
 
-                            {error ? (
-                                <p className="rounded-lg border border-kv-accent-red/25 bg-kv-accent-red/10 p-3 text-[13px] text-[#ff8c8c]">
-                                    {error}
-                                </p>
-                            ) : null}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {queue.map((item) => (
+                                    <QueueItemView
+                                        key={item.localId}
+                                        item={item}
+                                        onRemove={() => removeQueueItem(item.localId)}
+                                        onRetry={() => handleRetry(item.localId)}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
-                            <ParserModeSelector
-                                value={mode}
-                                onChange={setMode}
-                                plan={plan}
-                            />
+                    {closeWarning && (
+                        <div
+                            style={{
+                                padding: "12px",
+                                background: "rgba(255,99,99,0.08)",
+                                border: "1px solid rgba(255,99,99,0.25)",
+                                borderRadius: "8px",
+                            }}
+                        >
+                            <div
+                                className="flex items-center gap-2"
+                                style={{
+                                    fontSize: "13px",
+                                    color: "#ff8c8c",
+                                }}
+                            >
+                                <AlertTriangle size={14} />
+                                Upload in progress. Are you sure?
+                            </div>
 
-                            <div className="flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-end">
+                            <div className="mt-3 flex gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setOpen(false)}
-                                    className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-kv-surface-2 px-4 font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] text-kv-text-secondary transition hover:bg-kv-surface-4 hover:text-kv-text-primary"
+                                    onClick={confirmForceClose}
+                                    style={{
+                                        height: "28px",
+                                        padding: "0 10px",
+                                        borderRadius: "6px",
+                                        border: "1px solid rgba(255,99,99,0.25)",
+                                        background: "transparent",
+                                        color: "#ff8c8c",
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                    }}
                                 >
-                                    <X className="mr-2 h-3.5 w-3.5" />
-                                    Cancel
+                                    Confirm
                                 </button>
 
                                 <button
                                     type="button"
-                                    disabled={!file}
-                                    onClick={startUploadAndParse}
-                                    className={cn(
-                                        "inline-flex h-10 items-center justify-center rounded-lg bg-kv-cta-bg px-5 text-kv-cta-text",
-                                        "font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em]",
-                                        "shadow-[0_3px_0_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.25)]",
-                                        "transition hover:bg-white active:translate-y-[2px] active:shadow-none",
-                                        "disabled:pointer-events-none disabled:opacity-50"
-                                    )}
+                                    onClick={() => setCloseWarning(false)}
+                                    style={{
+                                        height: "28px",
+                                        padding: "0 10px",
+                                        borderRadius: "6px",
+                                        border: "1px solid rgba(255,255,255,0.10)",
+                                        background: "transparent",
+                                        color: "#9c9c9d",
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                    }}
                                 >
-                                    <Upload className="mr-2 h-3.5 w-3.5" />
-                                    Start Parse
+                                    Cancel
                                 </button>
                             </div>
                         </div>
-                    ) : (
-                        <ParseProgressBar
-                            status={status}
-                            progress={progress}
-                            label={label}
-                            error={error}
-                            onTryAgain={() => {
-                                setPhase("select");
-                                setStatus("idle");
-                                setProgress(0);
-                                setLabel("Waiting to start");
-                                setError(null);
-                                setJobId(null);
-                                setResumeId(null);
-                            }}
-                        />
                     )}
                 </div>
-            </DialogContent>
-        </Dialog>
+
+                {/* Footer */}
+                <div
+                    className="max-md:px-4 max-md:py-3"
+                    style={{
+                        padding: "16px 20px",
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        flexShrink: 0,
+                    }}
+                >
+                    <div
+                        style={{
+                            fontFamily:
+                                "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                            fontSize: "12px",
+                            color: hasQueuedFiles ? "#e7c59a" : "#454647",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                        }}
+                    >
+                        {hasQueuedFiles && (
+                            <>
+                                <span style={{ fontSize: "14px", color: "#e7c59a" }}>◆</span>
+                                <span>~{creditEstimate} credits</span>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={requestClose}
+                            style={{
+                                height: "34px",
+                                padding: "0 14px",
+                                background: "transparent",
+                                border: "1px solid rgba(255,255,255,0.10)",
+                                borderRadius: "8px",
+                                fontSize: "14px",
+                                color: "#9c9c9d",
+                                cursor: "pointer",
+                                transition: "border-color 160ms ease, color 160ms ease",
+                            }}
+                            onMouseEnter={(event) => {
+                                event.currentTarget.style.borderColor =
+                                    "rgba(255,255,255,0.20)";
+                                event.currentTarget.style.color = "#f3f3f3";
+                            }}
+                            onMouseLeave={(event) => {
+                                event.currentTarget.style.borderColor =
+                                    "rgba(255,255,255,0.10)";
+                                event.currentTarget.style.color = "#9c9c9d";
+                            }}
+                        >
+                            Cancel
+                        </button>
+
+                        <button
+                            type="button"
+                            disabled={uploadDisabled}
+                            onClick={handleUploadAndParse}
+                            style={{
+                                height: "34px",
+                                padding: "0 16px",
+                                background: "#e6e6e6",
+                                border: "none",
+                                borderRadius: "8px",
+                                fontSize: "14px",
+                                fontWeight: 500,
+                                color: "#2f3031",
+                                cursor: uploadDisabled ? "not-allowed" : "pointer",
+                                opacity: uploadDisabled ? 0.4 : 1,
+                                boxShadow:
+                                    "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+                                transition: "transform 160ms ease, box-shadow 160ms ease",
+                            }}
+                            onMouseDown={(event) => {
+                                if (uploadDisabled) return;
+
+                                event.currentTarget.style.transform = "translateY(1px)";
+                                event.currentTarget.style.boxShadow =
+                                    "0 1px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+                            }}
+                            onMouseUp={(event) => {
+                                if (uploadDisabled) return;
+
+                                event.currentTarget.style.transform = "translateY(0)";
+                                event.currentTarget.style.boxShadow =
+                                    "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+                            }}
+                        >
+                            ↑ UPLOAD & PARSE
+                        </button>
+                    </div>
+                </div>
+
+                {resumeId && (
+                    <div
+                        style={{
+                            padding: "10px 20px",
+                            borderTop: "1px solid rgba(255,255,255,0.06)",
+                            background: "rgba(0,172,92,0.08)",
+                            color: "#00ac5c",
+                            fontFamily:
+                                "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                            fontSize: "11px",
+                        }}
+                    >
+                        Parse completed. Redirecting to editor...
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }
+
+function QueueItemView({
+    item,
+    onRemove,
+    onRetry,
+}: {
+    item: QueueItem;
+    onRemove: () => void;
+    onRetry: () => void;
+}) {
+    const active = isActiveStatus(item.status);
+    const badgeStatus = toBadgeStatus(item.status);
+
+    return (
+        <div
+            style={{
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: "8px",
+                padding: "10px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+            }}
+        >
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-[7px]">
+                    <FileText
+                        size={14}
+                        style={{
+                            color: "#6a6b6c",
+                            flexShrink: 0,
+                        }}
+                    />
+
+                    <span
+                        className="truncate"
+                        style={{
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            color: "#f3f3f3",
+                        }}
+                    >
+                        {item.fileName}
+                    </span>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                    {item.status === "idle" ? (
+                        <>
+                            <span
+                                style={{
+                                    fontFamily:
+                                        "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+                                    fontSize: "11px",
+                                    color: "#454647",
+                                }}
+                            >
+                                Queued
+                            </span>
+
+                            <button
+                                type="button"
+                                aria-label="Remove file"
+                                onClick={onRemove}
+                                style={{
+                                    width: "22px",
+                                    height: "22px",
+                                    borderRadius: "6px",
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#6a6b6c",
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                }}
+                            >
+                                <X size={13} />
+                            </button>
+                        </>
+                    ) : (
+                        <ParserStatusBadge status={badgeStatus} />
+                    )}
+                </div>
+            </div>
+
+            {item.status === "running" && item.progress < 35 && (
+                <ParseProgressBar
+                    status="running"
+                    progress={item.progress}
+                    label="Uploading…"
+                    size="sm"
+                />
+            )}
+
+            {item.status === "pending" && (
+                <ParseProgressBar
+                    status="pending"
+                    progress={0}
+                    label="Queued…"
+                    size="sm"
+                    showPercentage={false}
+                />
+            )}
+
+            {item.status === "running" && item.progress >= 35 && (
+                <ParseProgressBar
+                    status="running"
+                    progress={item.progress}
+                    label="Parsing…"
+                    size="sm"
+                />
+            )}
+
+            {item.status === "failed" && (
+                <div className="flex flex-col gap-2">
+                    {item.error && (
+                        <p
+                            style={{
+                                margin: 0,
+                                fontSize: "12px",
+                                color: "#ff8c8c",
+                                lineHeight: 1.4,
+                            }}
+                        >
+                            {item.error}
+                        </p>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={onRetry}
+                        className="inline-flex w-fit items-center gap-[6px]"
+                        style={{
+                            height: "24px",
+                            padding: "0 8px",
+                            border: "1px solid rgba(255,99,99,0.25)",
+                            borderRadius: "6px",
+                            background: "transparent",
+                            color: "#ff8c8c",
+                            fontSize: "12px",
+                            cursor: "pointer",
+                        }}
+                    >
+                        <RotateCcw size={12} />
+                        Retry
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default UploadFileDialog;

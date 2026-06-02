@@ -1,110 +1,219 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { ParserStatus } from "./parser-status-badge";
-import { ParserStatusBadge } from "./parser-status-badge";
+import { useEffect, useRef, useState } from "react";
+import type { ParseStatus } from "./parser-status-badge";
 
-type ParseProgressBarProps = {
-  status: ParserStatus;
+interface ParseProgressBarProps {
+  status: ParseStatus;
   progress: number;
   label?: string;
-  error?: string | null;
-  onTryAgain?: () => void;
-  className?: string;
-};
-
-const progressColor: Record<ParserStatus, string> = {
-  idle: "bg-kv-text-muted",
-  pending: "bg-kv-accent-amber",
-  running: "bg-kv-accent-blue",
-  completed: "bg-kv-accent-green",
-  failed: "bg-kv-accent-red",
-  cancelled: "bg-kv-text-disabled",
-};
+  showPercentage?: boolean;
+  size?: "sm" | "md";
+}
 
 function clampProgress(value: number) {
-  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getDefaultLabel(status: ParseStatus) {
+  switch (status) {
+    case "idle":
+      return "Idle";
+    case "pending":
+      return "Queued…";
+    case "running":
+      return "Parsing…";
+    case "completed":
+      return "Complete";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "Idle";
+  }
+}
+
+function getLabelColor(status: ParseStatus) {
+  if (status === "failed") return "#ff6363";
+  if (status === "completed") return "#00ac5c";
+  return "#9c9c9d";
+}
+
+function getFillColor(status: ParseStatus, progress: number) {
+  if (status === "idle") return "#454647";
+  if (status === "pending") return "#e7c59a";
+  if (status === "completed") return "#00ac5c";
+  if (status === "failed") return "#ff6363";
+  if (status === "cancelled") return "#454647";
+
+  if (progress >= 90) return "#00ac5c";
+  if (progress >= 70) return "#ff8f3d";
+
+  return "#e7c59a";
+}
+
+function getFillWidth(status: ParseStatus, progress: number) {
+  if (status === "idle") return 0;
+  if (status === "pending") return 40;
+  if (status === "completed") return 100;
+  if (status === "failed") return 100;
+  if (status === "cancelled") return progress;
+
+  return progress;
 }
 
 export function ParseProgressBar({
   status,
   progress,
   label,
-  error,
-  onTryAgain,
-  className,
+  showPercentage = true,
+  size = "md",
 }: ParseProgressBarProps) {
   const value = clampProgress(progress);
+  const previousStatusRef = useRef<ParseStatus>(status);
+  const [completedFlash, setCompletedFlash] = useState(false);
+
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+
+    if (previousStatus !== "completed" && status === "completed") {
+      const startTimer = window.setTimeout(() => {
+        setCompletedFlash(true);
+      }, 600);
+
+      const stopTimer = window.setTimeout(() => {
+        setCompletedFlash(false);
+      }, 1000);
+
+      previousStatusRef.current = status;
+
+      return () => {
+        window.clearTimeout(startTimer);
+        window.clearTimeout(stopTimer);
+      };
+    }
+
+    previousStatusRef.current = status;
+  }, [status]);
+
+  const displayLabel = label ?? getDefaultLabel(status);
+  const fillColor = getFillColor(status, value);
+  const fillWidth = getFillWidth(status, value);
+  const trackHeight = size === "sm" ? "3px" : "5px";
 
   return (
     <div
-      className={cn(
-        "rounded-xl border border-white/[0.08] bg-kv-surface-2 p-4",
-        className
-      )}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        width: "100%",
+      }}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="font-jetbrains text-[10px] uppercase tracking-[0.18em] text-kv-text-disabled">
-            Parse Progress
-          </p>
+      <style>
+        {`
+          @keyframes parse-progress-shimmer {
+            0% {
+              opacity: 0.5;
+            }
+            50% {
+              opacity: 1;
+            }
+            100% {
+              opacity: 0.5;
+            }
+          }
 
-          <p className="mt-1 text-[14px] font-medium text-kv-text-primary">
-            {label ||
-              (status === "completed"
-                ? "Completed. Redirecting to editor..."
-                : status === "failed"
-                  ? "Parsing failed"
-                  : status === "running"
-                    ? "Parsing your resume..."
-                    : status === "pending"
-                      ? "Preparing parser..."
-                      : "Waiting to start")}
-          </p>
-        </div>
+          @keyframes parse-progress-complete-flash {
+            0% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.4;
+            }
+            100% {
+              opacity: 1;
+            }
+          }
 
-        <ParserStatusBadge status={status} />
+          @media (prefers-reduced-motion: reduce) {
+            .parse-progress-animated {
+              animation-duration: 0.01ms !important;
+              animation-iteration-count: 1 !important;
+            }
+          }
+        `}
+      </style>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "8px",
+        }}
+      >
+        <span
+          style={{
+            fontSize: "12px",
+            fontFamily:
+              "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+            color: getLabelColor(status),
+            whiteSpace: "nowrap",
+          }}
+        >
+          {displayLabel}
+        </span>
+
+        {status === "running" && showPercentage && (
+          <span
+            style={{
+              fontSize: "11px",
+              fontFamily:
+                "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+              color: "#6a6b6c",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {value}%
+          </span>
+        )}
       </div>
 
-      <div className="mt-4 h-3 overflow-hidden rounded-md border border-white/[0.04] bg-white/[0.06]">
+      <div
+        style={{
+          width: "100%",
+          height: trackHeight,
+          background: "#1b1c1e",
+          borderRadius: "2px",
+          overflow: "hidden",
+        }}
+      >
         <div
-          className={cn("h-full transition-all duration-500", progressColor[status])}
-          style={{ width: `${value}%` }}
+          className={
+            status === "pending" || completedFlash
+              ? "parse-progress-animated"
+              : undefined
+          }
+          style={{
+            width: `${fillWidth}%`,
+            height: "100%",
+            borderRadius: "2px",
+            background: fillColor,
+            transition: "width 300ms ease, background-color 300ms ease",
+            animation:
+              status === "pending"
+                ? "parse-progress-shimmer 1.4s ease-in-out infinite"
+                : completedFlash
+                  ? "parse-progress-complete-flash 400ms ease-in-out 1"
+                  : undefined,
+          }}
         />
       </div>
-
-      <div className="mt-2 flex items-center justify-between font-jetbrains text-[10px] uppercase tracking-[0.12em]">
-        <span className="text-kv-text-disabled">Live indicator</span>
-        <span
-          className={cn(
-            status === "failed"
-              ? "text-kv-accent-red"
-              : status === "completed"
-                ? "text-kv-accent-green"
-                : "text-kv-accent-blue"
-          )}
-        >
-          {value}%
-        </span>
-      </div>
-
-      {error ? (
-        <p className="mt-3 rounded-lg border border-kv-accent-red/25 bg-kv-accent-red/10 p-3 text-[13px] leading-5 text-[#ff8c8c]">
-          {error}
-        </p>
-      ) : null}
-
-      {status === "failed" && onTryAgain ? (
-        <button
-          type="button"
-          onClick={onTryAgain}
-          className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-white/10 bg-kv-surface-3 px-3 font-jetbrains text-[11px] font-semibold uppercase tracking-[0.1em] text-kv-text-primary transition hover:bg-kv-surface-4 max-sm:w-full"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          Try Again
-        </button>
-      ) : null}
     </div>
   );
 }
+
+export default ParseProgressBar;

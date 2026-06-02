@@ -10,7 +10,6 @@ import {
   DashboardATSScoreWrapper,
   DashboardCreditsUsageWrapper,
   DashboardRecentFilesWrapper,
-  DashboardParseQueueWrapper,
   DashboardAISuggestionsWrapper,
   DashboardResumeAnalyticsWrapper,
 } from "@/components/dashboard/dashboard-wrappers";
@@ -75,38 +74,34 @@ export default async function DashboardPage() {
         }}
       />
 
-      <div className="mt-5 grid min-w-0 grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_436px]">
+      <div className="mt-6 grid min-w-0 grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_436px]">
         {/* Left Column */}
-        <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-6">
           <Suspense fallback={<CardSkeleton minHeight={132} />}>
             <DashboardActiveResumeWrapper userId={user.id} />
-          </Suspense>
-
-          <Suspense fallback={<CardSkeleton minHeight={120} />}>
-            <DashboardParseQueueWrapper userId={user.id} />
           </Suspense>
 
           <Suspense fallback={<CardSkeleton minHeight={220} />}>
             <DashboardRecentFilesWrapper userId={user.id} />
           </Suspense>
 
-          <Suspense fallback={<CardSkeleton minHeight={220} />}>
+          <Suspense fallback={<CardSkeleton minHeight={280} />}>
             <DashboardResumeAnalyticsWrapper userId={user.id} />
+          </Suspense>
+
+          <Suspense fallback={<CardSkeleton minHeight={220} />}>
+            <DashboardAISuggestionsWrapper userId={user.id} />
           </Suspense>
         </div>
 
         {/* Right Column */}
-        <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-6">
           <Suspense fallback={<CardSkeleton minHeight={230} />}>
             <DashboardATSScoreWrapper userId={user.id} />
           </Suspense>
 
           <Suspense fallback={<CardSkeleton minHeight={220} />}>
             <DashboardCreditsUsageWrapper userId={user.id} />
-          </Suspense>
-
-          <Suspense fallback={<CardSkeleton minHeight={220} />}>
-            <DashboardAISuggestionsWrapper userId={user.id} />
           </Suspense>
 
           <DashboardQuickActionsWrapper />

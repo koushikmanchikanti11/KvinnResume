@@ -45,7 +45,9 @@ export function DashboardHero({
   onUploadClick,
   onNewResumeClick,
 }: DashboardHeroProps) {
-  const [profileName, setProfileName] = useState<string | null>(userName ?? null);
+  const [profileName, setProfileName] = useState<string | null>(
+    userName ?? null
+  );
   const [loading, setLoading] = useState(!userName);
 
   useEffect(() => {
@@ -95,11 +97,17 @@ export function DashboardHero({
     <section
       className="w-full min-w-0"
       style={{
-        padding: "24px 0",
+        padding: "24px 0 20px",
+        overflow: "visible",
       }}
     >
       <div className="flex min-w-0 items-start justify-between gap-5 max-md:flex-col">
-        <div className="min-w-0 flex-1">
+        <div
+          className="min-w-0 flex-1"
+          style={{
+            overflow: "visible",
+          }}
+        >
           <div
             style={{
               fontFamily: "var(--font-jetbrains), monospace",
@@ -127,14 +135,17 @@ export function DashboardHero({
             />
           ) : (
             <h1
-              className="truncate"
+              className="text-[26px] md:text-[32px]"
               style={{
                 margin: 0,
-                fontSize: "32px",
+                paddingBottom: "4px",
                 fontWeight: 700,
-                lineHeight: 1.05,
+                lineHeight: "1.18",
                 color: "#ffffff",
                 letterSpacing: "-0.03em",
+                overflow: "visible",
+                whiteSpace: "normal",
+                wordBreak: "break-word",
               }}
             >
               {greeting}, {displayName}.
@@ -143,14 +154,15 @@ export function DashboardHero({
 
           <p
             style={{
-              marginTop: "8px",
+              marginTop: "4px",
               marginBottom: 0,
               fontSize: "14px",
               lineHeight: 1.5,
               color: "#6a6b6c",
             }}
           >
-            Track your resumes, parsing jobs, credits, and AI improvements from one workspace.
+            Track your resumes, parsing jobs, credits, and AI improvements from
+            one workspace.
           </p>
         </div>
 
@@ -226,15 +238,19 @@ export function DashboardHero({
                 fontSize: "14px",
                 fontWeight: 500,
                 cursor: "pointer",
-                transition: "border-color 160ms ease, color 160ms ease, background 160ms ease",
+                transition:
+                  "border-color 160ms ease, color 160ms ease, background 160ms ease",
               }}
               onMouseEnter={(event) => {
-                event.currentTarget.style.borderColor = "rgba(255,255,255,0.20)";
+                event.currentTarget.style.borderColor =
+                  "rgba(255,255,255,0.20)";
                 event.currentTarget.style.color = "#f3f3f3";
-                event.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                event.currentTarget.style.background =
+                  "rgba(255,255,255,0.04)";
               }}
               onMouseLeave={(event) => {
-                event.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+                event.currentTarget.style.borderColor =
+                  "rgba(255,255,255,0.10)";
                 event.currentTarget.style.color = "#9c9c9d";
                 event.currentTarget.style.background = "transparent";
               }}
@@ -244,7 +260,7 @@ export function DashboardHero({
             </button>
           ) : (
             <Link
-              href="/resume/new"
+              href="/editor/new"
               className="inline-flex items-center justify-center gap-[6px] max-md:flex-1"
               style={{
                 height: "34px",
@@ -256,7 +272,8 @@ export function DashboardHero({
                 fontSize: "14px",
                 fontWeight: 500,
                 textDecoration: "none",
-                transition: "border-color 160ms ease, color 160ms ease, background 160ms ease",
+                transition:
+                  "border-color 160ms ease, color 160ms ease, background 160ms ease",
               }}
             >
               <Plus size={14} />

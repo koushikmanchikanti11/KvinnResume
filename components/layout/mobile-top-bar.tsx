@@ -4,9 +4,11 @@ import Link from "next/link";
 import { Menu } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { AvatarMenu } from "./avatar-menu";
+import { useCredits } from "@/hooks/use-credits";
 
 export function MobileTopBar() {
   const openDrawer = useUIStore((s) => s.openDrawer);
+  const { credits, loading } = useCredits();
 
   return (
     <nav
@@ -64,7 +66,16 @@ export function MobileTopBar() {
               position: "relative",
             }}
           >
-            <span style={{ color: "#f3f3f3", fontWeight: 700, fontSize: "14px", lineHeight: 1 }}>K</span>
+            <span
+              style={{
+                color: "#f3f3f3",
+                fontWeight: 700,
+                fontSize: "14px",
+                lineHeight: 1,
+              }}
+            >
+              K
+            </span>
             <span
               style={{
                 position: "absolute",
@@ -106,8 +117,25 @@ export function MobileTopBar() {
             color: "#f3f3f3",
           }}
         >
-          <span style={{ color: "#e7c59a", fontSize: "9px" }}>◆</span>
-          <span>0</span>
+          <span
+            style={{
+              color:
+                !loading && credits && credits.credits_balance <= 0
+                  ? "#ff6363"
+                  : "#e7c59a",
+              fontSize: "9px",
+            }}
+          >
+            ◆
+          </span>
+
+          <span className={loading ? "animate-pulse" : undefined}>
+            {loading
+              ? "..."
+              : credits
+                ? credits.credits_balance.toLocaleString()
+                : "0"}
+          </span>
         </div>
 
         {/* Avatar */}

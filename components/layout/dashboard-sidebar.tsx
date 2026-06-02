@@ -19,6 +19,9 @@ import {
   Plus,
 } from "lucide-react";
 
+const SIDEBAR_WIDTH = 264;
+const NAVBAR_HEIGHT = 64;
+
 const mainNav = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "⌘1" },
   { name: "Files", href: "/files", icon: File, shortcut: "⌘2" },
@@ -47,19 +50,28 @@ export function DashboardSidebar() {
 
   return (
     <aside
-      className="hidden md:flex md:w-[248px] md:shrink-0 md:flex-col"
+      className="hidden md:flex"
       style={{
+        width: "264px",
         height: "calc(100vh - 64px)",
+        position: "fixed",
+        top: "64px",
+        left: 0,
+        zIndex: 45,
+        flexDirection: "column",
         background: "linear-gradient(180deg, #07080a 0%, #040506 100%)",
         borderRight: "1px solid rgba(255,255,255,0.06)",
+        borderTop: "1px solid rgba(255,255,255,0.04)",
         overflow: "hidden",
       }}
     >
       <nav
-        className="flex-1 overflow-y-auto px-3 py-4"
+        className="dashboard-sidebar-scroll"
         style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: "rgba(255,255,255,0.12) transparent",
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          padding: "16px 12px",
         }}
       >
         <SectionLabel>MAIN</SectionLabel>
@@ -78,79 +90,13 @@ export function DashboardSidebar() {
 
         <SectionLabel>CREATE</SectionLabel>
         <div className="mb-4 flex flex-col gap-3">
-          <Link
-            href="/files"
-            style={{
-              width: "100%",
-              height: "36px",
-              borderRadius: "8px",
-              background: "#e6e6e6",
-              color: "#2f3031",
-              fontSize: "12px",
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              fontFamily: "var(--font-jetbrains), monospace",
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              border: "none",
-              cursor: "pointer",
-              textDecoration: "none",
-              boxShadow:
-                "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-              transition: "transform 160ms ease, box-shadow 160ms ease",
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = "translateY(1px)";
-              e.currentTarget.style.boxShadow =
-                "0 1px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow =
-                "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
-            }}
-          >
-            <Upload size={14} />
+          <CreateButton href="/files" variant="primary" icon={<Upload size={14} />}>
             UPLOAD RESUME
-          </Link>
+          </CreateButton>
 
-          <Link
-            href="/resume/new"
-            style={{
-              width: "100%",
-              height: "36px",
-              borderRadius: "8px",
-              background: "transparent",
-              color: "#f3f3f3",
-              fontSize: "12px",
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              fontFamily: "var(--font-jetbrains), monospace",
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              border: "1px solid rgba(255,255,255,0.12)",
-              cursor: "pointer",
-              textDecoration: "none",
-              transition: "border-color 160ms ease, background 160ms ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-              e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
-            }}
-          >
-            <Plus size={14} />
+          <CreateButton href="/editor/new" variant="secondary" icon={<Plus size={14} />}>
             NEW RESUME
-          </Link>
+          </CreateButton>
         </div>
 
         <SectionLabel>MANAGE</SectionLabel>
@@ -180,10 +126,88 @@ export function DashboardSidebar() {
         </div>
       </nav>
 
-      <footer className="shrink-0 px-3 pb-4 pt-2">
+      <footer
+        style={{
+          flexShrink: 0,
+          padding: "12px",
+          borderTop: "1px solid rgba(255,255,255,0.04)",
+          background: "linear-gradient(180deg, rgba(4,5,6,0.72) 0%, #040506 100%)",
+        }}
+      >
         <SidebarCreditsMeter />
       </footer>
     </aside>
+  );
+}
+
+function CreateButton({
+  href,
+  variant,
+  icon,
+  children,
+}: {
+  href: string;
+  variant: "primary" | "secondary";
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const isPrimary = variant === "primary";
+
+  return (
+    <Link
+      href={href}
+      style={{
+        width: "100%",
+        height: "36px",
+        borderRadius: "8px",
+        background: isPrimary ? "#e6e6e6" : "transparent",
+        color: isPrimary ? "#2f3031" : "#f3f3f3",
+        fontSize: "12px",
+        fontWeight: isPrimary ? 600 : 500,
+        letterSpacing: "0.04em",
+        fontFamily: "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+        textTransform: "uppercase",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        border: isPrimary ? "none" : "1px solid rgba(255,255,255,0.12)",
+        cursor: "pointer",
+        textDecoration: "none",
+        boxShadow: isPrimary
+          ? "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)"
+          : "none",
+        transition:
+          "background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease",
+      }}
+      onMouseEnter={(event) => {
+        if (isPrimary) return;
+        event.currentTarget.style.background = "rgba(255,255,255,0.04)";
+        event.currentTarget.style.borderColor = "rgba(255,255,255,0.20)";
+      }}
+      onMouseLeave={(event) => {
+        if (isPrimary) return;
+        event.currentTarget.style.background = "transparent";
+        event.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+      }}
+      onMouseDown={(event) => {
+        event.currentTarget.style.transform = "translateY(1px)";
+        if (isPrimary) {
+          event.currentTarget.style.boxShadow =
+            "0 1px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+        }
+      }}
+      onMouseUp={(event) => {
+        event.currentTarget.style.transform = "translateY(0)";
+        if (isPrimary) {
+          event.currentTarget.style.boxShadow =
+            "0 2px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)";
+        }
+      }}
+    >
+      {icon}
+      {children}
+    </Link>
   );
 }
 
@@ -194,18 +218,10 @@ function SidebarCreditsMeter() {
   const used = credits?.monthly_ai_credits_used ?? 0;
   const plan = credits?.plan ?? "free";
 
-  const baseLimit =
-    plan === "premium"
-      ? 2000
-      : plan === "pro"
-        ? 1000
-        : 50;
+  const baseLimit = plan === "premium" ? 2000 : plan === "pro" ? 1000 : 50;
 
   const totalCredits = Math.max(baseLimit, balance + used, balance, 1);
-  const balancePercentage = Math.max(
-    0,
-    Math.min(100, (balance / totalCredits) * 100)
-  );
+  const balancePercentage = Math.max(0, Math.min(100, (balance / totalCredits) * 100));
 
   const isLow = balancePercentage <= 20;
   const isMedium = balancePercentage > 20 && balancePercentage <= 50;
@@ -227,7 +243,7 @@ function SidebarCreditsMeter() {
           fontWeight: 500,
           letterSpacing: "0.08em",
           color: "#454647",
-          fontFamily: "var(--font-jetbrains), monospace",
+          fontFamily: "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
           textTransform: "uppercase",
           marginBottom: "8px",
         }}
@@ -251,7 +267,7 @@ function SidebarCreditsMeter() {
             height: "100%",
             background: barColor,
             borderRadius: "3px",
-            transition: "width 300ms ease, background 300ms ease",
+            transition: "width 300ms ease, background-color 300ms ease",
           }}
         />
       </div>
@@ -263,7 +279,7 @@ function SidebarCreditsMeter() {
           justifyContent: "space-between",
           gap: "8px",
           fontSize: "11px",
-          fontFamily: "var(--font-jetbrains), monospace",
+          fontFamily: "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
           color: "#9c9c9d",
         }}
       >
@@ -272,9 +288,7 @@ function SidebarCreditsMeter() {
         ) : credits ? (
           <>
             <span>{balance.toLocaleString()}</span>
-            <span style={{ color: "#6a6b6c" }}>
-              / {totalCredits.toLocaleString()}
-            </span>
+            <span style={{ color: "#6a6b6c" }}>/ {totalCredits.toLocaleString()}</span>
           </>
         ) : (
           <span>---</span>
@@ -292,7 +306,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
         fontWeight: 500,
         letterSpacing: "0.08em",
         color: "#454647",
-        fontFamily: "var(--font-jetbrains), monospace",
+        fontFamily: "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
         textTransform: "uppercase",
         padding: "4px 12px",
         marginBottom: "4px",
@@ -335,19 +349,20 @@ function NavItem({
           : "1px solid transparent",
         textDecoration: "none",
         position: "relative",
-        transition: "background 160ms ease, color 160ms ease",
+        transition:
+          "background 160ms ease, color 160ms ease, border-color 160ms ease",
         overflow: "hidden",
       }}
-      onMouseEnter={(e) => {
+      onMouseEnter={(event) => {
         if (!active) {
-          e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-          e.currentTarget.style.color = "#f3f3f3";
+          event.currentTarget.style.background = "rgba(255,255,255,0.04)";
+          event.currentTarget.style.color = "#f3f3f3";
         }
       }}
-      onMouseLeave={(e) => {
+      onMouseLeave={(event) => {
         if (!active) {
-          e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.color = "#9c9c9d";
+          event.currentTarget.style.background = "transparent";
+          event.currentTarget.style.color = "#9c9c9d";
         }
       }}
     >
@@ -373,13 +388,14 @@ function NavItem({
         }}
       />
 
-      <span className="flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
 
       {shortcut && (
         <span
           style={{
             fontSize: "11px",
-            fontFamily: "var(--font-jetbrains), monospace",
+            fontFamily:
+              "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
             color: "#6a6b6c",
             flexShrink: 0,
           }}

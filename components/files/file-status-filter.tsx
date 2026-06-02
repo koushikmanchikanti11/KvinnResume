@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Check } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   DropdownMenu,
@@ -9,12 +9,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type FileStatusFilterProps = {
-  value?: string;
-};
+export type FileStatusFilterValue =
+  | "all"
+  | "idle"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
-const filters = [
-  { value: "all", label: "All" },
+interface FileStatusFilterProps {
+  value?: FileStatusFilterValue | string;
+  paramName?: string;
+}
+
+const filters: Array<{
+  value: FileStatusFilterValue;
+  label: string;
+}> = [
+  { value: "all", label: "Status" },
   { value: "idle", label: "Idle" },
   { value: "pending", label: "Pending" },
   { value: "running", label: "Running" },
@@ -24,101 +37,130 @@ const filters = [
 ];
 
 function getFilterLabel(value?: string) {
-  return filters.find((filter) => filter.value === value)?.label || "All";
+  return filters.find((filter) => filter.value === value)?.label || "Status";
 }
 
-export function FileStatusFilter({ value = "all" }: FileStatusFilterProps) {
+export function FileStatusFilter({
+  value = "all",
+  paramName = "status",
+}: FileStatusFilterProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  function handleChange(nextValue: string) {
+  function handleChange(nextValue: FileStatusFilterValue) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (nextValue === "all") {
-      params.delete("status");
+      params.delete(paramName);
     } else {
-      params.set("status", nextValue);
+      params.set(paramName, nextValue);
     }
 
     const query = params.toString();
-    router.push(query ? `/dashboard/files?${query}` : "/dashboard/files");
+
+    router.push(query ? `/files?${query}` : "/files");
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         style={{
-          width: "100%",
-          minWidth: "150px",
-          height: "40px",
-          borderRadius: "10px",
-          background: "#111214",
-          border: "1px solid rgba(255,255,255,0.1)",
-          display: "flex",
+          height: "36px",
+          padding: "0 12px",
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "8px",
+          fontSize: "13px",
+          color: "#9c9c9d",
+          cursor: "pointer",
+          display: "inline-flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 14px",
-          fontSize: "11px",
-          fontWeight: 600,
-          color: "#f3f3f3",
-          fontFamily: "var(--font-jetbrains), monospace",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          gap: "10px",
+          minWidth: "124px",
           outline: "none",
-          cursor: "pointer",
+          transition: "border-color 160ms ease, color 160ms ease",
+          fontFamily: "var(--font-sans), Inter, system-ui, sans-serif",
+        }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+          event.currentTarget.style.color = "#f3f3f3";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+          event.currentTarget.style.color = "#9c9c9d";
         }}
       >
         <span>{getFilterLabel(value)}</span>
-        <ChevronDown className="h-4 w-4" style={{ color: "#6a6b6c" }} />
+        <ChevronDown size={14} style={{ color: "#6a6b6c" }} />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        align="end"
+        align="start"
+        sideOffset={6}
         style={{
-          width: "220px",
+          width: "184px",
           background: "#111214",
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: "1px solid rgba(255,255,255,0.10)",
           borderRadius: "12px",
-          fontFamily: "var(--font-jetbrains), monospace",
-          fontSize: "13px",
           padding: "6px",
-          boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
+          boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
         }}
-        className="animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150"
       >
         {filters.map((filter) => {
-          const selected = value === filter.value || (!value && filter.value === "all");
+          const selected =
+            value === filter.value ||
+            (!value && filter.value === "all") ||
+            (value === "all" && filter.value === "all");
 
           return (
             <DropdownMenuItem
               key={filter.value}
               onClick={() => handleChange(filter.value)}
               style={{
-                padding: "10px 14px",
-                color: selected ? "#f3f3f3" : "#9c9c9d",
-                cursor: "pointer",
-                borderRadius: "8px",
+                height: "34px",
+                padding: "0 10px",
+                borderRadius: "7px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: "10px",
-                background: selected ? "rgba(255,255,255,0.05)" : "transparent",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
+                gap: "9px",
+                cursor: "pointer",
+                fontSize: "12px",
+                fontWeight: 500,
+                color: selected ? "#f3f3f3" : "#9c9c9d",
+                background: selected
+                  ? "rgba(255,255,255,0.05)"
+                  : "transparent",
+                transition: "background 120ms ease, color 120ms ease",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                e.currentTarget.style.color = "#f3f3f3";
+              onMouseEnter={(event) => {
+                event.currentTarget.style.background =
+                  "rgba(255,255,255,0.05)";
+                event.currentTarget.style.color = "#f3f3f3";
               }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = selected
+              onMouseLeave={(event) => {
+                event.currentTarget.style.background = selected
                   ? "rgba(255,255,255,0.05)"
                   : "transparent";
-                e.currentTarget.style.color = selected ? "#f3f3f3" : "#9c9c9d";
+                event.currentTarget.style.color = selected
+                  ? "#f3f3f3"
+                  : "#9c9c9d";
               }}
             >
               <span>{filter.label}</span>
-              {selected ? <Check className="h-4 w-4" /> : null}
+
+              {selected && (
+                <Check
+                  size={14}
+                  style={{
+                    color: "#e7c59a",
+                    flexShrink: 0,
+                  }}
+                />
+              )}
             </DropdownMenuItem>
           );
         })}
@@ -126,3 +168,5 @@ export function FileStatusFilter({ value = "all" }: FileStatusFilterProps) {
     </DropdownMenu>
   );
 }
+
+export default FileStatusFilter;
