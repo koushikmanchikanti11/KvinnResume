@@ -1,141 +1,710 @@
-"use client"
+"use client";
 
-import React, { useState, useRef, useEffect } from "react"
-import { Send, Sparkles } from "lucide-react"
-import { useAiChat } from "@/hooks/use-ai-chat"
-import { AIModelSelector } from "./ai-model-selector"
+import { useEffect, useMemo, useState } from "react";
+import { MessageSquare, Plus, Search, X } from "lucide-react";
+import { toast } from "sonner";
 
-export function AiChatClient() {
-  const { messages, isLoading, model, setModel, sendMessage } = useAiChat()
-  const [input, setInput] = useState("")
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+import AiChatPanel, {
+  type MessageRecord,
+  type ResumeOption,
+} from "./ai-chat-panel";
+import type { AiModel } from "./ai-model-selector";
 
-  const handleSend = () => {
-    if (input.trim() && !isLoading) {
-      sendMessage(input)
-      setInput("")
-    }
-  }
+export type ConversationRecord = {
+  id: string;
+  title: string;
+  lastMessage: string;
+  updatedAt: string;
+  resumeId: string | null;
+  messageCount: number;
+};
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
+export type { MessageRecord, ResumeOption };
 
-  // Auto-scroll to bottom
+interface AiChatClientProps {
+  initialConversations: ConversationRecord[];
+  initialResumes: ResumeOption[];
+  userCredits: number;
+  userId: string;
+}
+
+type SendMessageResponse = {
+  conversationId: string;
+  userMessageId: string;
+  conversation?: ConversationRecord | null;
+};
+
+function formatRelativeTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "recently";
+
+  const diffMs = Date.now() - date.getTime();
+  const seconds = Math.max(0, Math.floor(diffMs / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+
+  if (seconds < 60) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (weeks < 4) return `${weeks}w ago`;
+
+  return `${months}mo ago`;
+}
+
+function buildConversationTitle(content: string) {
+  const trimmed = content.trim();
+
+  if (!trimmed) return "New conversation";
+
+  return trimmed.length > 42 ? `${trimmed.slice(0, 42)}…` : trimmed;
+}
+
+function buildLastMessage(content: string) {
+  const trimmed = content.trim().replace(/\s+/g, " ");
+
+  if (!trimmed) return "";
+
+  return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
+}
+
+function createOptimisticId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+export default function AiChatClient({
+  initialConversations,
+  initialResumes,
+  userCredits,
+  userId,
+}: AiChatClientProps) {
+  const [conversations, setConversations] =
+    useState<ConversationRecord[]>(initialConversations);
+
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null
+  );
+
+  const [messages, setMessages] = useState<MessageRecord[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+
+  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(
+    initialConversations[0]?.resumeId ?? null
+  );
+
+  const [search, setSearch] = useState("");
+
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+
+  const [credits, setCredits] = useState(userCredits);
+
+  const filteredConversations = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) return conversations;
+
+    return conversations.filter((conversation) => {
+      return (
+        conversation.title.toLowerCase().includes(query) ||
+        conversation.lastMessage.toLowerCase().includes(query)
+      );
+    });
+  }, [conversations, search]);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    if (!activeConversationId) {
+      setMessages([]);
+      setMessagesLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadMessages() {
+      setMessagesLoading(true);
+
+      try {
+        const response = await fetch(
+          `/api/ai/conversations/${activeConversationId}/messages`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load messages");
+        }
+
+        const data = (await response.json()) as
+          | MessageRecord[]
+          | { messages?: MessageRecord[] };
+
+        const nextMessages = Array.isArray(data) ? data : data.messages ?? [];
+
+        if (!mounted) return;
+
+        setMessages(nextMessages);
+      } catch (error) {
+        console.error("Failed to load AI messages:", error);
+
+        if (mounted) {
+          toast.error("Failed to load conversation messages");
+          setMessages([]);
+        }
+      } finally {
+        if (mounted) {
+          setMessagesLoading(false);
+        }
+      }
+    }
+
+    loadMessages();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeConversationId]);
+
+  function createNewConversation() {
+    if (isStreaming) return;
+
+    setActiveConversationId(null);
+    setMessages([]);
+    setStreamingContent("");
+    setSelectedResumeId(null);
+  }
+
+  async function deleteConversation(conversationId: string) {
+    if (isStreaming) return;
+
+    const previousConversations = conversations;
+
+    setConversations((current) =>
+      current.filter((conversation) => conversation.id !== conversationId)
+    );
+
+    if (activeConversationId === conversationId) {
+      setActiveConversationId(null);
+      setMessages([]);
+      setSelectedResumeId(null);
+    }
+
+    try {
+      const response = await fetch(`/api/ai/conversations/${conversationId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete conversation");
+      }
+
+      toast.success("Conversation deleted");
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+      setConversations(previousConversations);
+      toast.error("Failed to delete conversation");
+    }
+  }
+
+  async function handleSendMessage(content: string, model: AiModel) {
+    const trimmed = content.trim();
+
+    if (!trimmed || credits <= 0 || isStreaming) return;
+
+    const optimisticUserMessage: MessageRecord = {
+      id: createOptimisticId("user"),
+      role: "user",
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((current) => [...current, optimisticUserMessage]);
+    setIsStreaming(true);
+    setStreamingContent("");
+    setCredits((current) => Math.max(0, current - 1));
+
+    let conversationIdForStream = activeConversationId;
+
+    try {
+      const response = await fetch(
+        `/api/ai/conversations/${activeConversationId ?? "new"}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            content: trimmed,
+            model,
+            resumeId: selectedResumeId,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to send message");
+      }
+
+      const data = (await response.json()) as SendMessageResponse;
+
+      conversationIdForStream = data.conversationId;
+
+      if (!conversationIdForStream || !data.userMessageId) {
+        throw new Error("Invalid AI message response");
+      }
+
+      if (!activeConversationId) {
+        setActiveConversationId(conversationIdForStream);
+
+        const now = new Date().toISOString();
+
+        const newConversation: ConversationRecord =
+          data.conversation ?? {
+            id: conversationIdForStream,
+            title: buildConversationTitle(trimmed),
+            lastMessage: buildLastMessage(trimmed),
+            updatedAt: now,
+            resumeId: selectedResumeId,
+            messageCount: 1,
+          };
+
+        setConversations((current) => [newConversation, ...current]);
+      } else {
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.id === activeConversationId
+              ? {
+                  ...conversation,
+                  lastMessage: buildLastMessage(trimmed),
+                  updatedAt: new Date().toISOString(),
+                  messageCount: conversation.messageCount + 1,
+                }
+              : conversation
+          )
+        );
+      }
+
+      await streamAssistantResponse({
+        conversationId: conversationIdForStream,
+        userMessageId: data.userMessageId,
+      });
+    } catch (error) {
+      console.error("AI send message failed:", error);
+
+      setMessages((current) =>
+        current.filter((message) => message.id !== optimisticUserMessage.id)
+      );
+
+      setCredits((current) => current + 1);
+      setIsStreaming(false);
+      setStreamingContent("");
+
+      toast.error("Failed to send message");
+    }
+  }
+
+  async function streamAssistantResponse({
+    conversationId,
+    userMessageId,
+  }: {
+    conversationId: string;
+    userMessageId: string;
+  }) {
+    try {
+      const response = await fetch(
+        `/api/ai/conversations/${conversationId}/stream?messageId=${userMessageId}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to stream AI response");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      let finalContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        finalContent += chunk;
+        setStreamingContent((current) => current + chunk);
+      }
+
+      const assistantMessage: MessageRecord = {
+        id: createOptimisticId("assistant"),
+        role: "assistant",
+        content: finalContent,
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages((current) => [...current, assistantMessage]);
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                lastMessage: buildLastMessage(finalContent),
+                updatedAt: new Date().toISOString(),
+                messageCount: conversation.messageCount + 1,
+              }
+            : conversation
+        )
+      );
+    } catch (error) {
+      console.error("AI streaming failed:", error);
+      toast.error("AI response failed");
+    } finally {
+      setIsStreaming(false);
+      setStreamingContent("");
+    }
+  }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] w-full animate-in fade-in slide-in-from-bottom-4 duration-500 mx-auto">
-      <div className="flex-shrink-0 mb-6 flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2 text-kv-text-primary">
-            <Sparkles className="w-6 h-6 text-kv-accent-violet" />
-            AI Resume Chat
-          </h1>
-          <p className="text-kv-text-secondary mt-1 text-[14px]">
-            Ask for feedback, improvements, or cover letter drafts.
-          </p>
+    <div
+      style={{
+        display: "flex",
+        height: "calc(100vh - 64px)",
+        overflow: "hidden",
+        background: "#040506",
+      }}
+    >
+      {/* Left conversation sidebar */}
+      <aside
+        className="hidden md:flex"
+        style={{
+          width: "280px",
+          flexShrink: 0,
+          background: "#07080a",
+          borderRight: "1px solid rgba(255,255,255,0.06)",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "52px",
+            padding: "0 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              fontFamily:
+                "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+              fontSize: "11px",
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              color: "#454647",
+            }}
+          >
+            AI CHAT
+          </div>
+
+          <button
+            type="button"
+            onClick={createNewConversation}
+            disabled={isStreaming}
+            className="inline-flex items-center gap-[5px]"
+            style={{
+              height: "28px",
+              padding: "0 10px",
+              background: "rgba(141,107,255,0.1)",
+              border: "1px solid rgba(141,107,255,0.2)",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#8d6bff",
+              cursor: isStreaming ? "not-allowed" : "pointer",
+              opacity: isStreaming ? 0.4 : 1,
+              transition: "background 160ms ease, transform 120ms ease",
+            }}
+            onMouseEnter={(event) => {
+              if (isStreaming) return;
+              event.currentTarget.style.background = "rgba(141,107,255,0.18)";
+            }}
+            onMouseLeave={(event) => {
+              if (isStreaming) return;
+              event.currentTarget.style.background = "rgba(141,107,255,0.1)";
+            }}
+            onMouseDown={(event) => {
+              if (isStreaming) return;
+              event.currentTarget.style.transform = "translateY(1px)";
+            }}
+            onMouseUp={(event) => {
+              if (isStreaming) return;
+              event.currentTarget.style.transform = "translateY(0)";
+            }}
+          >
+            <Plus size={12} />
+            New
+          </button>
         </div>
-        <div className="w-32">
-          <AIModelSelector value={model} onChange={setModel} disabled={isLoading} />
+
+        <div
+          style={{
+            margin: "10px 12px 6px",
+            position: "relative",
+            flexShrink: 0,
+          }}
+        >
+          <Search
+            size={13}
+            style={{
+              position: "absolute",
+              left: "10px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "#6a6b6c",
+              pointerEvents: "none",
+            }}
+          />
+
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search conversations…"
+            style={{
+              width: "100%",
+              height: "32px",
+              padding: "0 10px 0 32px",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: "7px",
+              fontSize: "12px",
+              color: "#f3f3f3",
+              outline: "none",
+              transition: "border-color 160ms ease",
+            }}
+            onFocus={(event) => {
+              event.currentTarget.style.borderColor =
+                "rgba(231,197,154,0.4)";
+            }}
+            onBlur={(event) => {
+              event.currentTarget.style.borderColor =
+                "rgba(255,255,255,0.07)";
+            }}
+          />
         </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "6px 8px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "2px",
+          }}
+        >
+          {filteredConversations.length === 0 ? (
+            <ConversationEmptyState />
+          ) : (
+            filteredConversations.map((conversation) => (
+              <ConversationItem
+                key={conversation.id}
+                conversation={conversation}
+                active={activeConversationId === conversation.id}
+                onSelect={() => {
+                  if (isStreaming) return;
+                  setActiveConversationId(conversation.id);
+                  setSelectedResumeId(conversation.resumeId);
+                }}
+                onDelete={() => deleteConversation(conversation.id)}
+              />
+            ))
+          )}
+        </div>
+      </aside>
+
+      {/* Right chat panel */}
+      <main
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+        }}
+      >
+        <AiChatPanel
+          conversationId={activeConversationId}
+          messages={messagesLoading ? [] : messages}
+          resumes={initialResumes}
+          selectedResumeId={selectedResumeId}
+          onResumeSelect={setSelectedResumeId}
+          userCredits={credits}
+          onSendMessage={handleSendMessage}
+          isStreaming={isStreaming}
+          streamingContent={streamingContent}
+        />
+      </main>
+    </div>
+  );
+}
+
+function ConversationItem({
+  conversation,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  conversation: ConversationRecord;
+  active: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        height: "64px",
+        padding: "10px",
+        borderRadius: "8px",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        gap: "4px",
+        transition: "background 160ms ease",
+        position: "relative",
+        background: active ? "#111214" : hovered ? "rgba(255,255,255,0.04)" : "transparent",
+        boxShadow: active ? "inset 2px 0 0 #8d6bff" : "none",
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Delete conversation"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete();
+        }}
+        style={{
+          width: "20px",
+          height: "20px",
+          position: "absolute",
+          top: "8px",
+          right: "8px",
+          border: "none",
+          background: "transparent",
+          color: hovered ? "#454647" : "transparent",
+          opacity: hovered ? 1 : 0,
+          cursor: "pointer",
+          transition: "opacity 160ms ease, color 160ms ease",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.color = "#ff6363";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.color = "#454647";
+        }}
+      >
+        <X size={13} />
+      </button>
+
+      <div
+        style={{
+          fontSize: "13px",
+          fontWeight: 500,
+          color: active ? "#f3f3f3" : "#9c9c9d",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: "calc(100% - 40px)",
+        }}
+      >
+        {conversation.title || "New conversation"}
       </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 border border-kv-border-soft rounded-xl bg-kv-surface-3 overflow-hidden flex flex-col relative max-w-[1000px] w-full mx-auto shadow-md">
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-          {/* Greeting message */}
-          <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-[rgba(141,107,255,0.1)] border border-[rgba(141,107,255,0.2)] flex items-center justify-center flex-shrink-0 mt-1">
-              <Sparkles className="w-4 h-4 text-kv-accent-violet" />
-            </div>
-            <div>
-              <div className="text-[13px] font-semibold text-kv-text-primary mb-1">Kvinn AI</div>
-              <div className="text-[14px] text-kv-text-secondary leading-relaxed bg-kv-surface-2 p-4 rounded-xl rounded-tl-none border border-kv-border-soft max-w-2xl whitespace-pre-wrap">
-                Hello! I can help you improve your resume. I can rewrite bullets, check ATS compatibility, or generate a tailored cover letter. What would you like to do?
-              </div>
-            </div>
-          </div>
+      <div
+        style={{
+          fontSize: "11px",
+          color: "#6a6b6c",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+        }}
+      >
+        {conversation.lastMessage || "No messages yet"}
+      </div>
 
-          {/* Messages */}
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : ""}`}>
-              {msg.role === "assistant" && (
-                <div className="w-8 h-8 rounded-full bg-[rgba(141,107,255,0.1)] border border-[rgba(141,107,255,0.2)] flex items-center justify-center flex-shrink-0 mt-1">
-                  <Sparkles className="w-4 h-4 text-kv-accent-violet" />
-                </div>
-              )}
-              
-              <div className={`max-w-2xl ${msg.role === "user" ? "flex flex-col items-end" : ""}`}>
-                <div className={`text-[13px] font-semibold mb-1 ${msg.role === "user" ? "text-kv-text-primary" : "text-kv-text-primary"}`}>
-                  {msg.role === "user" ? "You" : "Kvinn AI"}
-                  {msg.role === "assistant" && msg.model && (
-                    <span className="ml-2 text-[10px] font-mono text-kv-text-muted px-1.5 py-0.5 rounded bg-kv-surface-1 border border-kv-border-soft">
-                      {msg.model === "nano_25" ? "nano 2.5" : "nano 3"}
-                    </span>
-                  )}
-                </div>
-                <div className={`text-[14px] leading-relaxed p-4 rounded-xl border whitespace-pre-wrap ${
-                  msg.role === "user" 
-                    ? "bg-kv-surface-1 border-kv-border-soft rounded-tr-none text-kv-text-primary" 
-                    : "bg-kv-surface-2 border-kv-border-soft rounded-tl-none text-kv-text-secondary"
-                }`}>
-                  {msg.content}
-                </div>
-              </div>
-            </div>
-          ))}
-          
-          {isLoading && (
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full bg-[rgba(141,107,255,0.1)] border border-[rgba(141,107,255,0.2)] flex items-center justify-center flex-shrink-0 mt-1">
-                <Sparkles className="w-4 h-4 text-kv-accent-violet animate-pulse" />
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-kv-text-primary mb-1">Kvinn AI</div>
-                <div className="text-[14px] text-kv-text-secondary leading-relaxed bg-kv-surface-2 p-4 rounded-xl rounded-tl-none border border-kv-border-soft flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-kv-accent-violet animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-kv-accent-violet animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-kv-accent-violet animate-bounce" style={{ animationDelay: "300ms" }} />
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="p-4 bg-kv-surface-2 border-t border-kv-border-soft">
-          <div className="relative max-w-4xl mx-auto flex items-center gap-2">
-            <textarea 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask me anything about your resume..." 
-              className="w-full bg-kv-surface-1 border border-kv-border-soft rounded-lg pl-4 pr-12 py-3 text-[14px] text-kv-text-primary focus:outline-none focus:border-kv-accent-violet transition-colors resize-none overflow-hidden h-12"
-              rows={1}
-              disabled={isLoading}
-            />
-            <button 
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-kv-accent-violet bg-[rgba(141,107,255,0.1)] hover:bg-[rgba(141,107,255,0.2)] disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="mt-3 text-[11px] font-jetbrains text-kv-text-muted text-center flex items-center justify-center gap-4">
-            <span>Requires 1 credit per message</span>
-            <span>↵ Enter to send</span>
-          </div>
-        </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "8px",
+          fontFamily:
+            "var(--font-jetbrains), var(--font-mono), JetBrains Mono, monospace",
+          fontSize: "10px",
+          color: "#454647",
+        }}
+      >
+        <span>{formatRelativeTime(conversation.updatedAt)}</span>
+        <span>
+          {conversation.messageCount}{" "}
+          {conversation.messageCount === 1 ? "message" : "messages"}
+        </span>
       </div>
     </div>
-  )
+  );
+}
+
+function ConversationEmptyState() {
+  return (
+    <div
+      className="flex flex-col items-center justify-center text-center"
+      style={{
+        flex: 1,
+        minHeight: "220px",
+        color: "#6a6b6c",
+      }}
+    >
+      <MessageSquare size={28} color="#454647" />
+
+      <div
+        style={{
+          marginTop: "10px",
+          fontSize: "13px",
+          color: "#6a6b6c",
+        }}
+      >
+        No conversations yet
+      </div>
+    </div>
+  );
 }

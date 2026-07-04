@@ -83,6 +83,111 @@ export type Database = {
           },
         ]
       }
+      ai_conversations: {
+        Row: {
+          id: string
+          user_id: string
+          resume_id: string | null
+          title: string
+          last_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          resume_id?: string | null
+          title?: string
+          last_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          resume_id?: string | null
+          title?: string
+          last_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_conversations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_conversations_resume_id_fkey"
+            columns: ["resume_id"]
+            isOneToOne: false
+            referencedRelation: "resumes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          user_id: string
+          role: string
+          content: string
+          model: string | null
+          provider: string | null
+          input_tokens: number
+          output_tokens: number
+          credits_used: number
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          user_id: string
+          role: string
+          content: string
+          model?: string | null
+          provider?: string | null
+          input_tokens?: number
+          output_tokens?: number
+          credits_used?: number
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          user_id?: string
+          role?: string
+          content?: string
+          model?: string | null
+          provider?: string | null
+          input_tokens?: number
+          output_tokens?: number
+          credits_used?: number
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "ai_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_packages: {
         Row: {
           active: boolean
@@ -784,6 +889,23 @@ export type Database = {
         }
         Returns: number
       }
+      create_ai_conversation: {
+        Args: {
+          p_user_id: string
+          p_resume_id?: string
+          p_title?: string
+        }
+        Returns: string
+      }
+      deduct_ai_credits: {
+        Args: {
+          p_user_id: string
+          p_amount: number
+          p_reason?: string
+          p_related_job_id?: string
+        }
+        Returns: number
+      }
       deduct_credits: {
         Args: {
           p_amount: number
@@ -794,6 +916,21 @@ export type Database = {
           p_user_id: string
         }
         Returns: number
+      }
+      insert_ai_message: {
+        Args: {
+          p_conversation_id: string
+          p_user_id: string
+          p_role: string
+          p_content: string
+          p_model?: string
+          p_provider?: string
+          p_input_tokens?: number
+          p_output_tokens?: number
+          p_credits_used?: number
+          p_metadata?: Json
+        }
+        Returns: string
       }
     }
     Enums: {

@@ -38,6 +38,7 @@ export const BEDROCK_MODEL_DISPLAY_NAMES: Record<string, string> = {
  */
 export const MODEL_ALIAS_MAP: Record<string, string> = {
   nano_25: BEDROCK_MODELS.MINIMAX_25,
+  nano_2_5: BEDROCK_MODELS.MINIMAX_25,
   nano_3: BEDROCK_MODELS.QWEN_3,
 } as const
 
