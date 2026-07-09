@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
@@ -67,9 +68,12 @@ export default async function ResumesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-auto">
-                <Button size="sm" className="flex-1 bg-kv-surface-2 text-kv-text-primary border border-kv-border-soft hover:bg-kv-surface-4 h-9 text-[13px] font-medium transition-colors">
+                <Link
+                  href={`/editor/${resume.id}`}
+                  className="inline-flex items-center justify-center flex-1 rounded-lg bg-kv-surface-2 text-kv-text-primary border border-kv-border-soft hover:bg-kv-surface-4 h-9 px-3 text-[13px] font-medium transition-colors"
+                >
                   Open Editor
-                </Button>
+                </Link>
               </div>
             </PixelCard>
           ))}

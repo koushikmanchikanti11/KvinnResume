@@ -246,7 +246,7 @@ export default function FilesPageClient({
     function pollParseStatus(fileId: string, jobId: string) {
         const timer = window.setInterval(async () => {
             try {
-                const response = await fetch(`/api/parse/status/${jobId}`, {
+                const response = await fetch(`/api/parse/status?jobId=${jobId}`, {
                     method: "GET",
                     cache: "no-store",
                 });

@@ -16,6 +16,7 @@ export const redisKeys = {
     aiGeneration: (resumeId: string, promptHash: string) =>
       `cache:ai:${resumeId}:${promptHash}`,
     publicResume: (slug: string) => `cache:public-resume:${slug}`,
+    resumePublic: (slug: string) => `cache:resume-public:${slug}`,
     pdfExport: (resumeId: string, theme: string) =>
       `cache:pdf:${resumeId}:${theme}`,
   },

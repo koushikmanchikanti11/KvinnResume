@@ -21,8 +21,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { success } = await rateLimits.uploadResume.limit(user.id);
-    if (!success) {
+    let rateLimitSuccess = true;
+    try {
+      const result = await rateLimits.uploadResume.limit(user.id);
+      rateLimitSuccess = result.success;
+    } catch (e) {
+      console.error("Rate limit check failed (Redis error), bypassing:", e);
+    }
+
+    if (!rateLimitSuccess) {
       return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
     }
 
@@ -53,6 +60,7 @@ export async function POST(req: Request) {
       .select("id, original_filename, pages_count")
       .eq("user_id", user.id)
       .eq("checksum", hash)
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (existingFile) {

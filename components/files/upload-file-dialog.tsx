@@ -344,7 +344,9 @@ export function UploadFileDialog({
 
         async function pollOnce() {
             try {
-                const response = await fetch(`/api/parse/status/${jobId}`, {
+                // FIXED: /api/parse/status is a flat route — jobId must be a query param,
+                // not a path segment (there is no /api/parse/status/[jobId]/route.ts).
+                const response = await fetch(`/api/parse/status?jobId=${jobId}`, {
                     method: "GET",
                     cache: "no-store",
                 });
@@ -377,7 +379,9 @@ export function UploadFileDialog({
                     });
 
                     try {
-                        await fetch(`/api/parse/result?jobId=${jobId}`, {
+                        // FIXED: /api/parse/result/[jobId] is a dynamic route — jobId must be
+                        // a path segment, not a query param.
+                        await fetch(`/api/parse/result/${jobId}`, {
                             method: "GET",
                             cache: "no-store",
                         });

@@ -25,7 +25,7 @@ const NAVBAR_HEIGHT = 64;
 const mainNav = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, shortcut: "⌘1" },
   { name: "Files", href: "/files", icon: File, shortcut: "⌘2" },
-  { name: "My Resumes", href: "/resume", icon: FileText, shortcut: "⌘3" },
+  { name: "My Resumes", href: "/resumes", icon: FileText, shortcut: "⌘3" },
   { name: "AI Chat", href: "/ai-chat", icon: MessageSquare, shortcut: "⌘4" },
   { name: "Templates", href: "/templates", icon: LayoutTemplate, shortcut: "⌘5" },
 ];

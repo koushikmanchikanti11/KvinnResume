@@ -103,7 +103,7 @@ export async function DELETE(
           .update({ status: "cancelled" })
           .eq("id", job.id);
 
-        await redis.set(`job:parse:${job.id}:status`, "cancelled", { ex: 3600 });
+        await redis.set(`job:parse:${job.id}:status`, "cancelled", { ex: 3600 }).catch(e => console.error("Redis set error:", e));
 
         // Refund credits
         if (!job.refunded && job.credits_used && job.credits_used > 0) {
@@ -130,7 +130,7 @@ export async function DELETE(
     }
 
     if (file.checksum) {
-      await redis.del(`lock:parse:${file.checksum}`);
+      await redis.del(`lock:parse:${file.checksum}`).catch(e => console.error("Redis del error:", e));
     }
 
     return NextResponse.json({ message: "File deleted successfully" }, { status: 200 });
